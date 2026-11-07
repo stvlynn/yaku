@@ -1,43 +1,23 @@
-# Local Development
+# Local development
 
-> How to set up and run the project locally.
-
-## Prerequisites
-
-- Runtime: `__RUNTIME_VERSION__`
-- Package manager: `__PACKAGE_MANAGER__`
-- Database: `__DATABASE__`
-- Cache: `__CACHE__`
-
-## Setup
-
-1. Clone the repository.
-2. Copy `.env.example` to `.env` and fill in values.
-3. Install dependencies: `__INSTALL_COMMAND__`
-4. Run database migrations: `__MIGRATE_COMMAND__`
-5. Start the backend: `__START_BACKEND__`
-6. Start the frontend: `__START_FRONTEND__`
-
-## Environment variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | yes | Database connection string. |
-| `PORT` | no | Port for the backend server. Defaults to `3000`. |
-| `LOG_LEVEL` | no | Log level. Defaults to `info`. |
-
-## Running tests
+Install Node.js 24 and pnpm 9, then run:
 
 ```sh
-__TEST_COMMAND__
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-## Linting and formatting
+No database, application server, account or API key is needed. WXT launches the development extension. Production browser acceptance uses `pnpm build` and the unpacked `.output/chrome-mv3` directory.
+
+The local model requires a WebGPU adapter with shader-f16 and sufficient memory. First-use setup downloads approximately 1.38 GB; subsequent loads use OPFS. Model and OCR language data are not bundled in Git. JavaScript and WASM assets are copied from locked dependencies by `pnpm assets`.
 
 ```sh
-__LINT_COMMAND__
+pnpm check
+pnpm lint
+pnpm test
+pnpm test:e2e
 ```
 
-## Common issues
+Real model tests require a prepared isolated browser profile through `YAKU_MODEL_PROFILE`. See [experiment instructions](../../scripts/experiments/README.md) to reproduce a fresh production download, cancellation/retry, marker ablation and offline worker reload. Tests that use synthetic translators explicitly validate structure rather than model quality.
 
-Document common local-development issues here as they are discovered.
+On the managed Windows environment, sandboxed pnpm links can produce false module-resolution errors. Run authorized build/test commands with normal filesystem access; do not patch library imports to hide that environment issue.

@@ -19,8 +19,8 @@ This layer contains reusable primitives and utilities.
 Expose through sub-module indexes:
 
 ```ts
-import { Button } from 'shared/ui';
-import { formatDate } from 'shared/lib';
+import { Button } from "shared/ui";
+import { formatDate } from "shared/lib";
 ```
 
 ## Dependencies

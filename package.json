@@ -1,17 +1,54 @@
 {
-  "name": "agentic-coding-template",
-  "version": "0.0.0",
+  "name": "yaku",
+  "version": "0.1.0",
   "private": true,
-  "description": "Language- and framework-agnostic template for agent-driven projects.",
+  "description": "Local-first bilingual translation for the web.",
   "scripts": {
-    "check": "echo 'Replace with typecheck + lint + test commands'",
-    "test": "echo 'Replace with test runner command'",
-    "lint": "echo 'Replace with linter command'",
-    "format": "echo 'Replace with formatter command'",
-    "docs:check": "echo 'Replace with markdown link checker command'"
+    "experiment:download": "node scripts/experiments/production-download.mjs",
+    "experiment:offline": "node scripts/experiments/offline-worker.mjs",
+    "experiment:markers": "node scripts/experiments/marker-ablation.mjs",
+    "assets": "node scripts/copy-runtime.mjs && node scripts/copy-document-assets.mjs && node scripts/create-icons.mjs && node scripts/copy-licenses.mjs",
+    "dev": "pnpm assets && wxt",
+    "build": "pnpm assets && wxt build",
+    "zip": "pnpm assets && wxt zip",
+    "postinstall": "wxt prepare",
+    "check": "tsc --noEmit",
+    "lint": "node scripts/check-boundaries.mjs && prettier --check frontend tests wxt.config.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "format": "prettier --write frontend tests wxt.config.ts"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.9.0"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.0.0",
+  "type": "module",
+  "dependencies": {
+    "@base-ui/react": "^1.0.0",
+    "@huggingface/transformers": "4.3.2",
+    "fflate": "^0.8.3",
+    "lucide-react": "^0.468.0",
+    "mdast-util-from-markdown": "^2.1.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.5.438",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.1.0",
+    "@playwright/test": "^1.58.0",
+    "@types/chrome": "^0.1.0",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@wxt-dev/module-react": "1.2.2",
+    "jsdom": "^31.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "vite": "8.2.0",
+    "vitest": "^3.2.0",
+    "wxt": "0.21.5"
+  }
 }

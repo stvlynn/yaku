@@ -1,39 +1,11 @@
 # Operations
 
-This section covers how the project is run, built, deployed, and monitored.
+Use Node.js 24 with pnpm 9. The lockfile is committed. `pnpm install --frozen-lockfile` prepares WXT types; `pnpm assets` copies version-matched local workers and WASM. `pnpm build` builds the Chrome MV3 extension under `.output/chrome-mv3`; `pnpm zip` creates the distribution archive.
 
-## Documents
+`pnpm dev` runs WXT development. For manual testing, load the unpacked production directory in Chrome developer mode. The first-use workflow prepares the local model and performs a real practice translation.
 
-- [`local-dev.md`](local-dev.md) — local development setup.
-- [`deployment.md`](deployment.md) — deployment guide.
+Model data lives in browser-origin OPFS, not in the extension package or repository. OCR language data downloads separately. Runtime code stays packaged under the extension CSP. Use settings to inspect/remove model data; reinstallation can remove browser-owned storage.
 
-## Environment
+`pnpm check`, `pnpm test`, and `pnpm build` run in CI. Real GPU/Chrome acceptance is performed separately on a capable host; see [validation](../quality/validation.md). Test scripts create separate browser profiles and never operate on the user's personal Chrome profile.
 
-Fill in concrete environment requirements here once the technology stack is chosen:
-
-- Runtime version: `__RUNTIME_VERSION__`
-- Required environment variables: `DATABASE_URL`, `PORT`, `LOG_LEVEL`, etc.
-- Local services: database, cache, message broker.
-
-## Commands
-
-Define the standard commands for this project. Placeholders:
-
-```sh
-# Install dependencies
-__INSTALL_COMMAND__
-
-# Run tests
-__TEST_COMMAND__
-
-# Run type checks
-__TYPECHECK_COMMAND__
-
-# Start the backend
-__START_BACKEND__
-
-# Start the frontend
-__START_FRONTEND__
-```
-
-Replace these with real commands when the stack is selected.
+The Windows test environment uses Chrome's explicit extension-debugging protocol to load unpacked extensions into isolated headless profiles. This is a test launch option, not a flag users need for normal extension installation.

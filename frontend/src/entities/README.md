@@ -12,7 +12,7 @@ This layer contains domain data and rules.
 
 ```ts
 // entities/order/order.ts
-export type OrderStatus = 'draft' | 'submitted' | 'cancelled';
+export type OrderStatus = "draft" | "submitted" | "cancelled";
 
 export interface Order {
   id: string;

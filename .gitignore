@@ -1,4 +1,12 @@
 .workspace/
+.wxt/
+.output/
+public/wasm/
+public/ocr/
+public/pdf/
+public/icon/
+test-results/
+playwright-report/
 .env
 .env.*
 !.env.example
@@ -14,3 +22,4 @@ out/
 *.swp
 *.swo
 *~
+public/licenses/

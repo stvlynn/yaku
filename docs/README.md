@@ -4,6 +4,8 @@ This directory is the single source of truth for how this project is built, orga
 
 ## Domain map
 
+- [`research/`](research/README.md) — reverse-engineering evidence, model experiments and design sources.
+
 - [`project/`](project/README.md) — project overview, goals, architecture, and boundaries.
 - [`frontend/`](frontend/README.md) — Feature-Sliced Design (FSD) conventions.
 - [`backend/`](backend/README.md) — Domain-Driven Design (DDD) layered conventions.

@@ -1,0 +1,192 @@
+# Local translation model and runtime research
+
+## Decision supported by the evidence
+
+Use the exact base-model identity `tencent/Hy-MT2-1.8B`. Real browser translation succeeded with **Transformers.js 4.3.2** and the pinned community q4f16 conversion described below. Downloading the official repository directly does not provide a runnable Transformers.js model: it contains Safetensors, not ONNX. The browser smoke result establishes feasibility; extension lifecycle, offline persistence, export reproducibility, and translation quality still require integration validation.
+
+## Model artifacts
+
+| Artifact | Evidence | Consequence |
+| --- | --- | --- |
+| Official base model | [`tencent/Hy-MT2-1.8B` files](https://huggingface.co/tencent/Hy-MT2-1.8B/tree/main) include a 4.08 GB `model.safetensors`, tokenizer files, and no `onnx/` directory. | Do not point a browser ONNX loader at this repository and expect inference. |
+| Architecture | [Official config](https://huggingface.co/tencent/Hy-MT2-1.8B/blob/main/config.json) declares `HunYuanDenseV1ForCausalLM`, `hunyuan_v1_dense`, 32 layers, 4 KV heads, head dimension 128, BF16, and a 262144 position limit. | This is a decoder-only generation model. Keep browser input budgets much smaller than the advertised context limit. |
+| Compact official variants | [Official model card](https://huggingface.co/tencent/Hy-MT2-1.8B) lists FP8 and GGUF variants, including extreme low-bit versions. | GGUF is not an ONNX artifact; a 440 MB GGUF marketing figure is not the size of a Transformers.js download. |
+| Transformers.js candidate | [`DavidLuong/Hy-MT2-1.8B-ONNX-q4f16`](https://huggingface.co/DavidLuong/Hy-MT2-1.8B-ONNX-q4f16) exists but has no model card. | Export method, numerical fidelity, full dependency list, license files, and browser behavior need verification. |
+| Mirror candidate | [`LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror`](https://huggingface.co/LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror) claims a byte-identical mirror of upstream commit `cb415ae`; its [file list](https://huggingface.co/LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror/tree/main) totals about 1.38 GB. | It has a conventional Transformers.js file layout. This is useful for a spike, not proof of reproducible provenance. |
+
+The upstream conversion was downloaded at immutable revision `cb415aec769544c3f9cefdc312142b592e731bb9`. The graph contains 1,373,443,906 bytes. An independently computed SHA-256 matches both its LFS metadata and the mirror's published digest: `c0f5921fe143b05a420334392c59c175389d87dcfd60dc2554ca1c629eebec2a`.
+
+Small-file comparison against official Tencent revision `9a341cd1b679d3efd23b46e847b01745a71ed792` established:
+
+- `tokenizer.json` is byte-identical, SHA-256 `b475bbef1b0b2fd57dcb865332b546475bd1ede2deb3bb91bafd0c047a8a530a`.
+- `chat_template.jinja` is byte-identical, SHA-256 `b7491ec0e9c869dfce20f2176758099bf248d979dd05530ede99deb21698acee`.
+- Parsed `tokenizer_config.json` differs only by the conversion's added inline `chat_template`; the official copy supplies that template as the standalone Jinja file.
+- Conversion config sets FP16 and adds `transformers.js_config.kv_cache_dtype.q4f16 = 'float16'`.
+
+The conversion also contains stale metadata: `transformers.js_config.use_external_data_format = { 'model.onnx': 1 }`, although the repository contains no external data file. Independent protobuf inspection found 578 graph initializers, 1,371,762,688 embedded raw tensor bytes, and zero initializers with external data entries or an external data location. Consequently the tested loader explicitly uses `use_external_data_format: false`. This override addresses verified metadata inconsistency; it does not hide a missing-file failure.
+
+Other ONNX exports are not interchangeable. [Koedana's conversion](https://huggingface.co/Koedana/hy-mt2-1.8b-onnx) targets desktop ONNX Runtime CPU and is converted from Q4_K_M GGUF. [ModaLeap's conversion](https://huggingface.co/ModaLeap/hy-mt2-1.8b-onnx) targets CUDA and ONNX Runtime GenAI. [justinchuby's exports](https://huggingface.co/justinchuby/Hy-MT2-1.8B-ONNX) use a GenAI package layout. A `.onnx` suffix alone does not establish compatibility with the JavaScript loader, its KV-cache contract, or browser execution providers.
+
+## Model attribution evidence
+
+The official Tencent model's [pinned LICENSE.txt](https://huggingface.co/tencent/Hy-MT2-1.8B/blob/9a341cd1b679d3efd23b46e847b01745a71ed792/LICENSE.txt) explicitly identifies Tencent's 2026 copyright and Apache License, Version 2.0. Its [model API metadata](https://huggingface.co/api/models/tencent/Hy-MT2-1.8B) also reports `license: apache-2.0`. The license was downloaded and read directly during this investigation; a local copy is `.workspace/research/model-probe/official-LICENSE.txt`.
+
+The pinned DavidLuong conversion's [repository file inventory](https://huggingface.co/api/models/DavidLuong/Hy-MT2-1.8B-ONNX-q4f16/revision/cb415aec769544c3f9cefdc312142b592e731bb9) contains no license file or model card. Attribute the base model to Tencent under its published Apache-2.0 text, and separately identify the ONNX/q4f16 artifact's converter, repository URL, and immutable revision. Do not label the model MIT or claim an additional license grant from the conversion author. A third-party notice can describe this provenance without replacing the official model license or inventing conversion terms.
+
+## Runtime support
+
+[Transformers.js v4 release notes](https://github.com/huggingface/transformers.js/releases/tag/4.0.0) explicitly add HunYuanDenseV1 and WebGPU support. The current [release listing](https://github.com/huggingface/transformers.js/releases) exposes v4.3.2. GitHub source inspection also confirms the `hunyuan_v1_dense` causal-LM registration in [`registry.js`](https://github.com/huggingface/transformers.js/blob/main/packages/transformers/src/models/registry.js). Therefore, declaring the architecture unsupported based on v3 documentation would be incorrect. Pin the tested v4 version and lockfile.
+
+Context7 queries against `/huggingface/transformers.js` confirmed the documented `device: 'webgpu'` and `dtype: 'q4f16'`/`'q4'` options, custom WASM paths, and environment configuration. Those examples demonstrate API shape, not this conversion's execution. Use `text-generation` or `AutoModelForCausalLM` with the model's chat template; do not copy the Hub's autogenerated `translation` pipeline snippet for this decoder-only model.
+
+Use the [official translation prompt instructions](https://huggingface.co/tencent/Hy-MT2-1.8B) as the reference. Specify full language names, request translation-only output, and preserve the shipped chat template. First compare deterministic greedy decoding for reproducibility; separately evaluate the official sampling settings. Record prompt and tokenizer revisions together with the model revision.
+
+The [WebGPU guide](https://huggingface.co/docs/transformers.js/guides/webgpu) documents selecting the GPU execution device. Adapter availability, shader-f16, buffer limits, driver support, memory headroom, and device loss must still be tested on the actual browser. Do not silently switch to another model, service, or CPU backend if GPU initialization fails. Expose the diagnosed failure and make any alternative explicit.
+
+## Manifest V3 and WXT runtime shape
+
+Keep service-worker responsibilities to routing, settings, and offscreen-document lifecycle. The implemented runtime runs one model instance inside a dedicated worker owned by a bundled offscreen document. This structure follows these constraints:
+
+- [Chrome service workers](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) normally terminate after inactivity and lose in-memory globals. A large session should not depend on a persistent background global.
+- [Offscreen documents](https://developer.chrome.com/docs/extensions/reference/api/offscreen) require a bundled static HTML page and the `offscreen` permission; only the extension `runtime` API is supported there. The `WORKERS` reason describes spawning workers. Create the document once using `runtime.getContexts()` and a shared creation promise. This supports a minimum Chrome version of at least 116 for that lifecycle implementation.
+- [MV3 remote-code guidance](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code) requires executable JavaScript and WASM to be bundled. Download only model/tokenizer data; package all runtime modules, workers, and WASM assets. Inspect the final WXT output for CDN imports and runtime downloads.
+- [Extension CSP documentation](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy) permits `script-src 'self' 'wasm-unsafe-eval'; object-src 'self';`. Default extension CSP disables WASM. Do not add remote script origins or `unsafe-eval`.
+
+Do not close the offscreen document just because the popup closes. Explicitly dispose the model and close the document on an idle/unload action. Serialize inference to avoid concurrent KV-cache allocations; add cancellation and bounded queues. Persist artifact readiness separately from runtime readiness so a worker restart does not falsely report a loaded session.
+
+The model cache belongs to the extension origin, not a visited website. The implementation streams downloads into OPFS, validates the exact byte size of each pinned asset, and commits each file with `FileSystemWritableFileStream.close()`. Cache completeness is derived by checking all seven required files, totaling 1,383,140,565 bytes. Cancellation aborts an unfinished write; a later preparation reuses fully committed files. Storage exceptions are surfaced. [Chrome storage guidance](https://developer.chrome.com/docs/extensions/develop/concepts/storage-and-cookies) documents shared extension-origin web storage and `unlimitedStorage` protection from normal quota and eviction. The manifest requests this permission. [OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system) and [`createWritable`](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createWritable) provide the file and streaming-write primitives.
+
+Transformers.js browser and WASM caches are disabled. The model loader receives OPFS-backed responses through `env.fetch`; runtime JavaScript and WASM stay in the extension package. The asyncify `.mjs` and `.wasm` files are copied from the exact installed ONNX Runtime dependency, and explicit `wasmPaths` prevent CDN requests. The official package's `onnxruntime-web-use-extern-wasm` export condition selects its external-runtime entry point, avoiding a second emitted WASM copy. The model-core build measured 27.93 MB before additional document/OCR runtimes were added.
+
+Offline integration uncovered two library discovery paths that do not propagate the requested revision: `pipeline()` discovers files against `main`, and `AutoTokenizer` also checks tokenizer metadata against `main`. Instead of mapping an unpinned URL to different content, the implementation directly constructs the model's known generic `PreTrainedTokenizer` from its pinned OPFS JSON files, loads `AutoModelForCausalLM` at the immutable revision, and composes `TextGenerationPipeline`. Real offline recreation verifies that this path has no hidden model fetch requirement.
+
+## Observed browser smoke test
+
+The local research probe uses the installed Chrome through Playwright, `headless: true`, and Chromium flags `--enable-unsafe-webgpu` and `--ignore-gpu-blocklist`. It serves the downloaded graph from loopback HTTP and runs the bundled Transformers.js browser build with locally served ONNX Runtime assets. These flags limit the portability claim: repeat the test under normal supported-user browser settings before release.
+
+The GPU adapter exposed `shader-f16`; one model session loaded with `device: 'webgpu'`, `dtype: 'q4f16'`, and `use_external_data_format: false`. Both prompts use the model's chat template with greedy decoding and a 96-token output cap.
+
+| Observation | Result |
+| --- | --- |
+| Model load and initialization | 25.25 seconds, including loopback graph transfer and session creation |
+| English input | `The quick brown fox jumps over the lazy dog.` |
+| Chinese output | `敏捷的棕色狐狸跳过了懒狗。` in 7.78 seconds |
+| Chinese input | `今天天气很好，我们一起去公园散步。` |
+| English output | `The weather is great today; let’s go for a walk in the park together.` in 5.71 seconds |
+
+These are two smoke cases on one machine, not quality or throughput benchmarks. CacheStorage insertion of the large ONNX response emitted `UnknownError: Failed to execute 'put' on 'Cache': Unexpected internal error`. Inference continued successfully from downloaded bytes. Therefore a successful load is explicitly **not evidence of offline readiness**. Test extension-origin storage separately and provide a deliberate large-file persistence strategy if its CacheStorage exhibits the same failure.
+
+Local, untracked reproduction assets live in `.workspace/research/model-probe/`: `run-probe.mjs` bundles the browser probe, starts loopback port 4178, launches installed Chrome, and records `result.json`; `inspect-onnx.mjs` verifies graph tensors and digest in `artifact-inspection.json`. Downloaded files are under `model/` and can be reused for extension integration tests without another internet download. Run `node .workspace/research/model-probe/inspect-onnx.mjs` followed by `node .workspace/research/model-probe/run-probe.mjs` after dependencies and Chrome are installed. A .workspace probe is intentionally separate from shipped extension code.
+
+Portable, maintained reproduction scripts now live in [`scripts/experiments`](../../scripts/experiments/README.md): `pnpm experiment:download`, `pnpm experiment:offline`, and `pnpm experiment:markers`. They use real production model downloads and extension-origin persistence, accept `YAKU_MODEL_PROFILE`, contain no weights or user-specific absolute paths, and write measured JSON evidence under `.workspace/experiments/results/`. The migration was syntax-checked without repeating already completed large downloads.
+
+## Ordered experiments and ablations
+
+Artifact, extension-origin persistence, and real offscreen-worker feasibility have evidence below. The remaining matrix is a reusable validation checklist; a failed gate blocks claims that depend on it.
+
+### Completed integration and cache ablation
+
+| Experiment | Observed result |
+| --- | --- |
+| Default browser CacheStorage, one large ONNX response | `Cache.put` failed with `UnknownError`; translation succeeded from memory, but persistence was not established. |
+| OPFS streaming writes in MV3 extension origin | All 7 files committed, exactly 1,383,140,565 bytes; preparation and translation succeeded. |
+| Cancellation before download | Preparation rejected with `AbortError` in 346 ms; cache remained incomplete with 0 committed bytes. An initially discovered race while waiting for the GPU adapter was corrected by creating the abort controller before requesting the adapter. |
+| Extension page unload, page reload, offline reinitialization | Reinitialization plus Chinese-to-English translation completed in 22.23 seconds; 0 model network requests and 0 downloaded bytes. |
+| Clear cache after inference | Model disposed; `cacheInfo` returned `complete: false`, `bytes: 0`. |
+| Actual WXT offscreen document and dedicated worker | With verified local files seeded into the same extension origin, network was disabled before preparation. Session loaded in 13.41 seconds; English-to-Chinese generation completed in 7.43 seconds. |
+| Actual offscreen destruction and recreation | The test closed the offscreen document, destroying its model worker. With networking still disabled, the background recreated both and translated Chinese to English in 20.04 seconds, including 7.22 seconds of generation. |
+
+The actual-product test deliberately seeded already downloaded model fixtures to avoid another internet transfer; the separate MV3 page test exercised the production `downloadModel` implementation end to end. These are distinct pieces of evidence. Installed Chrome was `157.0.8103.38`. The actual-product test used normal GPU settings, without the initial loopback smoke test's GPU override flags.
+
+A subsequent **production-download acceptance test** removed that fixture limitation: a separate fresh Chrome profile began with `cacheInfo.bytes = 0`, with no request interception or seeded files. Clicking the welcome page's Get started button automatically started preparation against the real pinned Hugging Face URLs. Cancelling through the UI at 1.6% left only the fully committed small files (9,696,659 bytes); the incomplete graph was not counted as cached. Restarting the onboarding download reused those small files, downloaded the complete graph, and reached `ready` after 173.01 seconds. Cache completeness then reported all 1,383,140,565 bytes. Continuing to the welcome practice step and translating `The weather is pleasant today.` produced `今天天气很好。` in the actual UI, completing the resumed flow after 179.55 seconds. Results are recorded locally in `production-download-result.json` and `production-download-cancelled-result.json`. These timings include real network transfer on one connection and are not download-duration guarantees.
+
+Real page integration used an HTTP article containing an inline link and a dynamically appended paragraph. The content-script command inserted Chinese translations, retained the link URL, translated the new paragraph automatically, and restored the original first paragraph's exact `outerHTML`. `The weather is pleasant today.` translated to `今天天气很好。` and restored to its original text. This checks real model messaging through background, offscreen, worker, and DOM application rather than a stubbed translator.
+
+### Translation unit ablation
+
+The same cached model, greedy decoding, language pair, and generation pipeline were used for each comparison. The fragment condition supplied the full paragraph as context for every fragment. Reported aggregate times include message overhead. These samples reveal failure modes; they do not establish a general quality score.
+
+| Source / condition | Actual output | Time |
+| --- | --- | --- |
+| `The bank raised interest rates after the meeting.` / whole paragraph | `银行在会议后提高了利率。` | 2.21 s |
+| Same source / fragments `The bank `, `raised interest rates`, ` after the meeting.` plus context | `银行` / `提高了利率` / `会议之后。` | 2.97 s aggregate |
+| `She gave the project a green light after reviewing the report.` / whole paragraph | `在审核了报告后，她批准了该项目。` | 3.22 s |
+| Same source / fragments `She gave the project `, `a green light`, ` after reviewing the report.` plus context | `她在审核了报告之后，批准了这个项目。` / `绿灯信号` / `在审阅了报告之后。` | 7.17 s aggregate |
+
+In the first example the fragment outputs retain English phrase order, yielding `银行 提高了利率 会议之后。`. In the idiom example the first fragment translates meaning from the supplied full context while the second translates the idiom literally. The whole-paragraph condition avoids these observed problems.
+
+The third condition translates the whole paragraph with stable inline tags and an explicit instruction to preserve each tag around its corresponding translated phrase. The following outputs were observed, with exact opening/closing marker multisets in all three cases:
+
+| Tagged source | Actual output | Time |
+| --- | --- | --- |
+| `The bank <yaku-link id="0">raised interest rates</yaku-link> after the meeting.` | `银行在会议后<yaku-link id="0">提高了利率</yaku-link>。` | 8.19 s |
+| `She gave the project <yaku-link id="0">a green light</yaku-link> after reviewing the report.` | `在审阅了报告后，她给该项目<yaku-link id="0">开了绿灯</yaku-link>。` | 7.95 s |
+| `Read <yaku-link id="0">the full report</yaku-link> before Friday and save <yaku-em id="1">$20</yaku-em>.` | `请在周五之前阅读<yaku-link id="0">完整报告</yaku-link>，并保存<yaku-em id="1">20美元</yaku-em>。` | 10.95 s |
+
+Marker generation costs additional tokens and was slower than plain whole-paragraph generation in these samples. It preserved clause reordering and the idiom in the first two examples. The last example still interprets ambiguous `save` as `保存`; marker validity is not a guarantee of translation correctness.
+
+**Adopted implementation:** one model request per paragraph with stable `yaku-link`, `yaku-em`, or `yaku-inline` ids. A deterministic parser validates that all expected tags occur exactly once, balanced, with their original parent relationships. It reconstructs only allowlisted original DOM tag names and attributes, never model-supplied HTML. Unknown tags, missing/duplicate ids, malformed nesting, and injected model HTML produce an explicit error; there is no fallback to fragmented generation. Link URLs are limited to HTTP, HTTPS, mailto, and tel; translated links opening new tabs receive `noopener noreferrer`. The original DOM stays available for restoration.
+
+The production marker implementation passed 16 page tests, including original node/event identity, dynamic updates, stale-result rejection, Chinese clause reordering, six damaged/injected markup cases, incorrect original nesting, and literal escaped script text. Type checking passed. The real model page regression produced `银行在会议后提高了利率。`, retained the original link URL, translated a dynamically appended paragraph, and restored the first paragraph's exact original `outerHTML`. The same run again recreated the entire offscreen worker while offline and translated successfully.
+
+### Writing and word explanation probes
+
+The same pinned q4f16 model was tested with three short inputs, each using an explicit task prompt and a normal translation prompt. Generation used greedy decoding with a 96-token cap; all six outputs finished below that cap. These initial probes used the browser loopback harness and are capability evidence, separate from UI integration acceptance.
+
+| Input / prompt | Actual output | Time |
+| --- | --- | --- |
+| `I has finish the report yesterday and send it to my boss.` / grammar rewrite | `I finished the report yesterday and sent it to my boss.` | 5.40 s |
+| Same input / translate into English | `I finished the report yesterday and sent it to my boss.` | 4.16 s |
+| `Send me report now.` / polite professional rewrite | `Please send me the report at your earliest convenience.` | 3.00 s |
+| Same input / translate into English | `Send me the report now.` | 1.93 s |
+| `bank`, in `The bank raised interest rates.` / explain in Chinese, include part of speech and a short definition | `在中文句子中，“bank”作为名词，表示“银行”。其词性为名词，简短定义是：指提供金融服务的机构。` | 7.73 s |
+| Same word and context / translate into Chinese | `银行` | 0.72 s |
+
+Explicit task instructions produced the requested polite rewrite and word explanation in these samples. A translation-only prompt cannot stand in for those tasks. This evidence supports exposing limited grammar/polite rewriting and contextual explanations with the same model; it does not establish general writing quality, dictionary accuracy, or support for every language. Concise/formal writing modes were not validated and are rejected by the prompt builder rather than silently mapped to another mode. Non-translation prompt branches quote source/context as untrusted data and ask the model not to follow instructions inside them.
+
+A subsequent UI explanation of `break the ice` gave the correct broad meaning but added an incorrect grammatical label. The final explanation prompt therefore requests only one or two concise sentences of contextual meaning, in plain text, without part-of-speech or grammatical metadata. With that production prompt, the same idiom in a meeting/joke context returned `To start a conversation smoothly.` in 4.85 seconds through the actual offscreen worker. The feature presents generated contextual meaning rather than claiming curated dictionary metadata.
+
+### Open shadow root coverage
+
+DOM traversal now recursively discovers accessible open shadow roots inside the selected page scope and collects text separately in each root. Visibility/exclusion checks walk through each shadow host, so hidden hosts, editable hosts, and excluded site selectors do not leak content into translation. Direct shadow-root text is translated back into that root, and lazy visibility uses its host. One MutationObserver observes each discovered root; mutations in a root and newly inserted hosts with open roots trigger incremental work. Restore/dispose disconnect all observations and retain original nodes.
+
+This behavior follows [Element.shadowRoot](https://developer.mozilla.org/en-US/docs/Web/API/Element/shadowRoot), [TreeWalker](https://developer.mozilla.org/en-US/docs/Web/API/TreeWalker), and [MutationObserver.observe](https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver/observe) API boundaries. Closed shadow roots are inaccessible. Attaching a shadow root later to an already present host does not itself generate an observable light-DOM mutation; without another observed mutation it is discovered on the next explicit page-translation action. No page prototypes are patched and no periodic full-page polling is added.
+
+Nineteen page tests passed, including three additional open-shadow cases: nested roots/direct root text and exact restoration; newly inserted hosts and dynamic paragraphs; and host-level hidden/editable/site exclusions. The real model browser regression translated `Read the full report today.` inside an open root as `今天请阅读完整报告。`, retained its link URL, translated a nested root's `Good morning.` as `早上好。`, translated a dynamically appended shadow paragraph as `今天天气很好。`, and restored both outer and nested roots' exact original `innerHTML`. The same regression again passed offline offscreen-worker recreation.
+
+### Completion and long-output integrity
+
+The high-level text pipeline previously set `max_new_tokens: 1024`, returned only decoded text, and internally enabled tokenizer truncation. Reaching a generation cap could therefore look like successful translation even when the response was incomplete. The implementation now explicitly tokenizes the full chat prompt with `truncation: false` and uses raw model generation, inspecting the actual EOS token before accepting a result.
+
+Generation runs in 512-token scheduling windows. A single [`DynamicCache`](https://github.com/huggingface/transformers.js/blob/main/packages/transformers/src/cache_utils.js) and the complete token sequence/attention mask are carried into subsequent calls; a window boundary does not trigger another translation prompt or publish a partial result. The [`generate` implementation](https://github.com/huggingface/transformers.js/blob/main/packages/transformers/src/models/modeling_utils.js) supports a caller-owned cache across calls. Only the model's configured EOS completes the request. Cancellation, unexpected non-EOS termination, and exhaustion of the model's actual configured context window produce explicit errors; cached GPU tensors are disposed in every exit path. No arbitrary character limit or silent clipping was added. Resource exhaustion remains an explicit runtime error rather than a partial-success response.
+
+Four controlled tests cover a 1,200-token completion across three windows with its final `END` preserved, unexpected short termination without EOS, physical context exhaustion without partial success, and cancellation with cache disposal. Type checking passed. A real-model cross-window experiment translated six sentences using a normal single call and then using eight-token windows. Both returned exactly:
+
+> 博物馆每天早上九点开门。游客可以在网上购买门票。六岁以下的儿童可以免费进入。请保留您的门票直到离开。最后一个展厅里有一张城市地图。感谢您光临我们的博物馆。
+
+The model generated 42 tokens including EOS. The windowed path used six calls (8, 8, 8, 8, 8, and 2 new tokens); recorded KV-cache lengths increased consistently from 67 to 101. The single call took 13.30 seconds and windowed generation took 10.56 seconds on this run; this order-dependent smoke comparison is not a throughput claim. The experiment validates real cache continuation and tail preservation without spending thousands of model tokens merely to reach the old cap. The separate 1,200-token controlled test covers crossing that cap.
+
+After integrating EOS-aware generation, a production-build regression again passed direct translation, offline offscreen-worker recreation, normal page inline-marker reconstruction, nested open-shadow translation, dynamic paragraphs, and exact restoration. The Chinese-page run explicitly set the output language for the fixture and restored the profile's previous preferences afterward. This avoids confusing another experiment's English writing preference with a model regression.
+
+| Gate | Controlled experiment | Evidence to capture / exit criterion |
+| --- | --- | --- |
+| P0 artifact identity | Resolve a full commit for the selected conversion. Enumerate config, tokenizer, graph, and external data; calculate sizes and SHA-256. Compare tokenizer/config with the official source. | Immutable artifact manifest; licensing and source attribution; no missing graph dependencies. |
+| P0 browser smoke | In an unpacked WXT MV3 build, load the candidate with pinned Transformers.js v4, `device: 'webgpu'`, `dtype: 'q4f16'`. Translate one short English sentence to Chinese and one Chinese sentence to English. | Actual session creation, coherent output, GPU/provider logs, and exact emitted network requests. Unit tests cannot satisfy this gate. |
+| P0 packaging | Block remote JS/WASM URLs while allowing model data. Run the same smoke case. | All executable requests resolve to `chrome-extension://`; no CSP errors. |
+| P0 offline lifecycle | Complete download, restart Chrome, disconnect networking, then translate. Close/reopen popup; terminate the background service worker and retry. | Cached assets work; one offscreen model instance; no data redownload; routing recovers. |
+| P1 precision | Compare verified q4f16 with a separately available compatible q4 or fp16 export of the same base revision. Keep prompts, decoding, inputs, and GPU fixed. | Cold/warm load, peak memory, first-token latency, tokens/sec, output fidelity. Never change only a dtype label when that artifact does not exist. |
+| P1 context | Test source budgets of 128, 256, 512, and 1024 tokens, one request at a time, with fixed output caps. | Memory, latency, truncation, repetition, omitted sentences; choose a measured budget. |
+| P1 prompt | Compare official translation instruction, the same instruction with source language, and glossary/context additions on a fixed bilingual fixture. | Translation-only compliance, terminology adherence, number/link preservation, human-rated meaning. |
+| P1 decoding | Greedy baseline versus official sampling settings, with fixed seed where supported. | Quality variance, hallucinations, latency; record at least repeated sampled outputs. |
+| P1 backend | Compare the same artifact on WebGPU and WASM only if both providers support all operators. Treat unsupported-provider errors as results. | Compatibility, memory, speed; no hidden automatic fallback. |
+| P1 resilience | Interrupt download; deny adapter; force worker termination; cancel generation; remove cache; test two simultaneous tabs and GPU device loss. | Explicit failure codes, recovery state, queue ordering, no duplicate downloads or sessions. |
+
+Use a small fixed corpus spanning short UI copy, paragraphs, punctuation, URLs, numbers, markup-like text, and untrusted instructions inside source text. Model output is untrusted text and must never become executable HTML. Measure translation quality independently from download and GPU throughput. The model's theoretical context limit and third-party benchmark claims do not establish browser suitability.
+
+## Remaining limits
+
+1. Browser, built-extension, and offscreen-worker inference passed the recorded smoke tests on one machine. This is not a cross-device performance or compatibility guarantee.
+2. Official weights require conversion; the community artifact lacks export documentation. The pinned artifact's hash, tokenizer identity, embedded tensors, and browser inference were independently verified; its conversion procedure was not reproduced.
+3. GPU availability and memory cannot be inferred from model size. q4f16 also requires fp16 support and sufficient runtime buffers; actual provider errors must decide compatibility.
+4. OPFS completeness, cancellation, deletion, extension CSP, offline worker recreation, and reuse after reopening the persistent Chrome profile have integration evidence. GPU device loss, low-disk behavior, and cross-device coverage remain additional validation work.
+5. The official [browser-support request](https://github.com/Tencent-Hunyuan/Hy-MT2/issues/2) concerns llama.cpp/GGUF and custom STQ kernels. It is community discussion, not evidence that this ONNX path fails or works.
