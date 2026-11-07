@@ -1,19 +1,11 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from "fflate";
+import { readWordParts, wordSegments } from "./docx";
+import { parseXml } from "./xml";
 import { copy } from "../../../shared/i18n";
 import type { PreparedDocument, Segment } from "../model/types";
 
-const wordNamespace =
-  "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const dcNamespace = "http://purl.org/dc/elements/1.1/";
 const xmlNamespace = "http://www.w3.org/XML/1998/namespace";
-const parser = () => new DOMParser();
-export function parseXml(source: string): Document {
-  const document = parser().parseFromString(source, "application/xml");
-  if (document.getElementsByTagName("parsererror").length)
-    throw new Error(copy.documentInvalidXml);
-  return document;
-}
-
 export function xmlTextSegments(document: Document): Segment[] {
   const segments: Segment[] = [];
   const walker = document.createTreeWalker(
@@ -35,101 +27,6 @@ export function xmlTextSegments(document: Document): Segment[] {
       write: (value, bilingual) => {
         const translated = `${source.match(/^\s*/)?.[0] ?? ""}${value.trim()}${source.match(/\s*$/)?.[0] ?? ""}`;
         node.data = bilingual ? `${source}\n${translated}` : translated;
-      },
-    });
-  }
-  return segments;
-}
-
-function wordSegments(document: Document): Segment[] {
-  const segments: Segment[] = [];
-  for (const paragraph of document.getElementsByTagNameNS(wordNamespace, "p")) {
-    const texts = [
-      ...paragraph.getElementsByTagNameNS(wordNamespace, "t"),
-    ].filter((text) => {
-      let parent = text.parentElement;
-      while (
-        parent &&
-        !(parent.namespaceURI === wordNamespace && parent.localName === "p")
-      )
-        parent = parent.parentElement;
-      return parent === paragraph;
-    });
-    const values = texts.map((text) => text.textContent ?? "");
-    const source = values.join("");
-    if (!source.trim()) continue;
-    let added: Element | undefined;
-    segments.push({
-      source,
-      write: (value, bilingual) => {
-        added?.remove();
-        texts.forEach((text, index) => {
-          text.textContent = values[index]!;
-        });
-        const destination = bilingual
-          ? (paragraph.cloneNode(true) as Element)
-          : paragraph;
-        if (bilingual) {
-          // Duplicating identifiers or drawings would corrupt references and repeat non-text content.
-          for (const node of [
-            destination,
-            ...destination.querySelectorAll("*"),
-          ]) {
-            if (
-              [
-                "bookmarkStart",
-                "bookmarkEnd",
-                "drawing",
-                "pict",
-                "object",
-                "commentRangeStart",
-                "commentRangeEnd",
-                "commentReference",
-              ].includes(node.localName)
-            )
-              node.remove();
-            for (const attribute of [...node.attributes])
-              if (
-                attribute.localName === "paraId" ||
-                attribute.localName === "textId"
-              )
-                node.removeAttributeNode(attribute);
-          }
-          paragraph.after(destination);
-          added = destination;
-        }
-        const targetTexts = bilingual
-          ? [...destination.getElementsByTagNameNS(wordNamespace, "t")]
-          : texts;
-        const characters = Array.from(value);
-        let consumed = 0;
-        let weight = 0;
-        targetTexts.forEach((text, index) => {
-          weight += Array.from(values[index] ?? "").length;
-          let end =
-            index === targetTexts.length - 1
-              ? characters.length
-              : Math.round(
-                  (characters.length * weight) /
-                    Math.max(1, Array.from(source).length),
-                );
-          // Preserve target words where spaces exist. Run styles survive, but semantic alignment is approximate.
-          if (
-            end > consumed &&
-            end < characters.length &&
-            /\S/.test(characters[end - 1]!) &&
-            /\S/.test(characters[end]!)
-          ) {
-            const nextSpace = characters.findIndex(
-              (character, i) => i >= end && /\s/.test(character),
-            );
-            if (nextSpace >= 0) end = nextSpace + 1;
-          }
-          end = Math.max(consumed, end);
-          text.textContent = characters.slice(consumed, end).join("");
-          text.setAttributeNS(xmlNamespace, "xml:space", "preserve");
-          consumed = end;
-        });
       },
     });
   }
@@ -183,24 +80,18 @@ export async function archiveDocument(
     }
     if (!contentPaths.size) throw new Error(copy.documentInvalidEpub);
   }
-  for (const [path, data] of Object.entries(files)) {
-    const selected =
-      extension === "epub"
-        ? contentPaths.has(path)
-        : /^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/.test(
-            path,
-          );
-    if (!selected) continue;
-    const document = parseXml(strFromU8(data));
-    documents.set(path, document);
-    segments.push(
-      ...(extension === "docx"
-        ? wordSegments(document)
-        : xmlTextSegments(document)),
-    );
+  if (extension === "docx") {
+    for (const [path, document] of readWordParts(files)) {
+      documents.set(path, document);
+      segments.push(...wordSegments(document));
+    }
+  } else {
+    for (const path of contentPaths) {
+      const document = parseXml(strFromU8(files[path]!));
+      documents.set(path, document);
+      segments.push(...xmlTextSegments(document));
+    }
   }
-  if (extension === "docx" && !documents.has("word/document.xml"))
-    throw new Error(copy.documentInvalidArchive);
   return {
     name,
     segments,

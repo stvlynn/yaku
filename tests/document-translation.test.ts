@@ -26,6 +26,59 @@ const translator = () =>
     text: `TR(${request.text.trim()})`,
     elapsedMs: 0,
   }));
+const wordNamespace =
+  "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const strictWordNamespace = "http://purl.oclc.org/ooxml/wordprocessingml/main";
+interface WordStory {
+  path: string;
+  type: string;
+  xml: string;
+  external?: boolean;
+}
+function wordPackage(
+  main: string,
+  stories: WordStory[] = [],
+  mainPath = "word/document.xml",
+  strict = false,
+): Record<string, Uint8Array> {
+  const prefix = strict
+    ? "http://purl.oclc.org/ooxml/officeDocument/relationships/"
+    : "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+  const contentPrefix =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.";
+  const slash = mainPath.lastIndexOf("/");
+  const relsPath = `${mainPath.slice(0, slash + 1)}_rels/${mainPath.slice(slash + 1)}.rels`;
+  return {
+    "[Content_Types].xml": strToU8(
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/${mainPath}" ContentType="${contentPrefix}document.main+xml"/>${stories
+        .filter((item) => !item.external)
+        .map(
+          (item) =>
+            `<Override PartName="/${item.path}" ContentType="${contentPrefix}${item.type}+xml"/>`,
+        )
+        .join("")}</Types>`,
+    ),
+    "_rels/.rels": strToU8(
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="main" Type="${prefix}officeDocument" Target="${mainPath}"/></Relationships>`,
+    ),
+    [relsPath]: strToU8(
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${stories.map((item, index) => `<Relationship Id="story${index}" Type="${prefix}${item.type}" Target="${item.external ? item.path : `/${item.path}`}"${item.external ? ' TargetMode="External"' : ""}/>`).join("")}</Relationships>`,
+    ),
+    [mainPath]: strToU8(main),
+    ...Object.fromEntries(
+      stories
+        .filter((item) => !item.external)
+        .map((item) => [item.path, strToU8(item.xml)]),
+    ),
+  };
+}
+function wordStory(
+  root: string,
+  text: string,
+  namespace = wordNamespace,
+): string {
+  return `<w:${root} xmlns:w="${namespace}"><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:${root}>`;
+}
 async function roundTrip(name: string, source: string, bilingual = false) {
   const document = await prepareDocument(file(name, source));
   const translate = translator();
@@ -126,9 +179,8 @@ describe("document format round trips", () => {
   it("translates full Word paragraphs and preserves formatting, relationships and binary parts", async () => {
     const xml =
       '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>Hel</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>lo world</w:t></w:r></w:p></w:body></w:document>';
-    const originalFiles = {
-      "word/document.xml": strToU8(xml),
-      "word/_rels/document.xml.rels": strToU8("<Relationships/>"),
+    const originalFiles: Record<string, Uint8Array> = {
+      ...wordPackage(xml),
       "word/media/image.png": new Uint8Array([1, 2, 3]),
     };
     const prepared = await prepareDocument(
@@ -162,15 +214,255 @@ describe("document format round trips", () => {
       document.getElementsByTagNameNS("*", "jc")[0]?.getAttribute("w:val"),
     ).toBe("center");
     expect(Array.from(files["word/_rels/document.xml.rels"]!)).toEqual(
-      Array.from(originalFiles["word/_rels/document.xml.rels"]),
+      Array.from(originalFiles["word/_rels/document.xml.rels"]!),
     );
     expect(Array.from(files["word/media/image.png"]!)).toEqual(
-      Array.from(originalFiles["word/media/image.png"]),
+      Array.from(originalFiles["word/media/image.png"]!),
     );
     const reloaded = await prepareDocument(
       file("again.docx", new Uint8Array(await blob.arrayBuffer())),
     );
     expect(reloaded.segments[0]?.source).toBe("Bonjour le monde");
+  });
+
+  it.each([false, true])(
+    "selects related Word stories with arbitrary paths and strict=%s namespaces",
+    async (strict) => {
+      const namespace = strict ? strictWordNamespace : wordNamespace;
+      const stories = [
+        {
+          path: "parts/first.xml",
+          type: "header",
+          xml: wordStory("hdr", "Header", namespace),
+        },
+        {
+          path: "parts/bottom.xml",
+          type: "footer",
+          xml: wordStory("ftr", "Footer", namespace),
+        },
+        {
+          path: "notes/foot.xml",
+          type: "footnotes",
+          xml: `<w:footnotes xmlns:w="${namespace}"><w:footnote w:id="1"><w:p><w:r><w:t>Footnote</w:t></w:r></w:p></w:footnote></w:footnotes>`,
+        },
+        {
+          path: "notes/end.xml",
+          type: "endnotes",
+          xml: `<w:endnotes xmlns:w="${namespace}"><w:endnote w:id="1"><w:p><w:r><w:t>Endnote</w:t></w:r></w:p></w:endnote></w:endnotes>`,
+        },
+        {
+          path: "annotations/review.xml",
+          type: "comments",
+          xml: `<w:comments xmlns:w="${namespace}"><w:comment w:id="0" w:author="Reviewer"><w:p><w:r><w:t>Comment</w:t></w:r></w:p></w:comment></w:comments>`,
+        },
+        {
+          path: "https://outside.invalid/header.xml",
+          type: "header",
+          xml: "",
+          external: true,
+        },
+      ];
+      const original = wordPackage(
+        `<w:document xmlns:w="${namespace}"><w:body><w:p><w:r><w:t>Main</w:t></w:r></w:p></w:body></w:document>`,
+        stories,
+        "custom/main.xml",
+        strict,
+      );
+      // A relative relationship is resolved against its source part, not the archive root.
+      original["custom/_rels/main.xml.rels"] = strToU8(
+        strFromU8(original["custom/_rels/main.xml.rels"]!).replace(
+          'Target="/parts/first.xml"',
+          'Target="../parts/first.xml"',
+        ),
+      );
+      original["word/header1.xml"] = strToU8(wordStory("hdr", "Orphan"));
+      original["word/document.xml"] = strToU8(
+        wordStory("document", "Unused main"),
+      );
+      original["word/charts/chart1.xml"] = strToU8(
+        "<chart>Do not modify</chart>",
+      );
+      const prepared = await prepareDocument(
+        file("stories.docx", zipSync(original)),
+      );
+      const translate = translator();
+      const blob = await translateDocument(prepared, {
+        translate,
+        targetLanguage: "fr",
+        bilingual: false,
+      });
+      expect(translate.mock.calls.map(([request]) => request.text)).toEqual([
+        "Main",
+        "Header",
+        "Footer",
+        "Footnote",
+        "Endnote",
+        "Comment",
+      ]);
+      const output = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+      for (const story of stories.filter((item) => !item.external))
+        expect(strFromU8(output[story.path]!)).toContain("TR(");
+      for (const part of [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "custom/_rels/main.xml.rels",
+        "word/header1.xml",
+        "word/document.xml",
+        "word/charts/chart1.xml",
+      ])
+        expect(Array.from(output[part]!)).toEqual(Array.from(original[part]!));
+      expect(strFromU8(output["annotations/review.xml"]!)).toContain(
+        'w:author="Reviewer"',
+      );
+    },
+  );
+
+  it("preserves and translates distinct Choice/Fallback textboxes without merging them into the parent paragraph", async () => {
+    const xml = `<w:document xmlns:w="${wordNamespace}" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml"><w:body><w:p><w:r><w:t>Outside</w:t></w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:r><w:drawing><wps:txbx><w:txbxContent><w:p><w:r><w:t>Modern textbox</w:t></w:r></w:p></w:txbxContent></wps:txbx></w:drawing></w:r></mc:Choice><mc:Fallback><w:r><w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:t>Legacy textbox</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r></mc:Fallback></mc:AlternateContent></w:p></w:body></w:document>`;
+    const prepared = await prepareDocument(
+      file("boxes.docx", zipSync(wordPackage(xml))),
+    );
+    const translate = translator();
+    const blob = await translateDocument(prepared, {
+      translate,
+      targetLanguage: "fr",
+      bilingual: true,
+    });
+    expect(translate.mock.calls.map(([request]) => request.text)).toEqual([
+      "Outside",
+      "Modern textbox",
+      "Legacy textbox",
+    ]);
+    const document = new DOMParser().parseFromString(
+      strFromU8(
+        unzipSync(new Uint8Array(await blob.arrayBuffer()))[
+          "word/document.xml"
+        ]!,
+      ),
+      "application/xml",
+    );
+    expect(document.getElementsByTagNameNS("*", "parsererror")).toHaveLength(0);
+    expect(document.getElementsByTagNameNS("*", "Choice")).toHaveLength(2);
+    expect(document.getElementsByTagNameNS("*", "Fallback")).toHaveLength(2);
+    expect(document.getElementsByTagNameNS("*", "drawing")).toHaveLength(1);
+    expect(document.getElementsByTagNameNS("*", "pict")).toHaveLength(1);
+    const boxes = [
+      ...document.getElementsByTagNameNS(wordNamespace, "txbxContent"),
+    ];
+    expect(boxes.map((box) => box.textContent)).toEqual([
+      "Modern textboxTR(Modern textbox)",
+      "Legacy textboxTR(Legacy textbox)",
+    ]);
+    expect(document.documentElement.textContent).toContain("TR(Outside)");
+  });
+
+  it("does not duplicate note references or note-number markers in bilingual paragraphs", async () => {
+    const xml = `<w:document xmlns:w="${wordNamespace}"><w:body><w:p><w:r><w:t>Main</w:t><w:footnoteReference w:id="1"/><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>`;
+    const stories = [
+      {
+        path: "word/footnotes.xml",
+        type: "footnotes",
+        xml: `<w:footnotes xmlns:w="${wordNamespace}"><w:footnote w:id="1"><w:p><w:r><w:footnoteRef/><w:t>Note</w:t></w:r></w:p></w:footnote></w:footnotes>`,
+      },
+      {
+        path: "word/endnotes.xml",
+        type: "endnotes",
+        xml: `<w:endnotes xmlns:w="${wordNamespace}"><w:endnote w:id="2"><w:p><w:r><w:endnoteRef/><w:t>End note</w:t></w:r></w:p></w:endnote></w:endnotes>`,
+      },
+    ];
+    const prepared = await prepareDocument(
+      file("notes.docx", zipSync(wordPackage(xml, stories))),
+    );
+    const blob = await translateDocument(prepared, {
+      translate: translator(),
+      targetLanguage: "fr",
+      bilingual: true,
+    });
+    const output = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+    const main = new DOMParser().parseFromString(
+      strFromU8(output["word/document.xml"]!),
+      "application/xml",
+    );
+    const notes = new DOMParser().parseFromString(
+      strFromU8(output["word/footnotes.xml"]!),
+      "application/xml",
+    );
+    expect(
+      main.getElementsByTagNameNS(wordNamespace, "footnoteReference"),
+    ).toHaveLength(1);
+    expect(
+      main.getElementsByTagNameNS(wordNamespace, "endnoteReference"),
+    ).toHaveLength(1);
+    expect(
+      notes.getElementsByTagNameNS(wordNamespace, "footnoteRef"),
+    ).toHaveLength(1);
+    expect(notes.documentElement.textContent).toBe("NoteTR(Note)");
+    const endnotes = new DOMParser().parseFromString(
+      strFromU8(output["word/endnotes.xml"]!),
+      "application/xml",
+    );
+    expect(
+      endnotes.getElementsByTagNameNS(wordNamespace, "endnoteRef"),
+    ).toHaveLength(1);
+    expect(endnotes.documentElement.textContent).toBe("End noteTR(End note)");
+  });
+
+  it("rejects invalid Word package identities, relationships, targets and content types instead of filename fallback", async () => {
+    const xml = wordStory("document", "Text");
+    const base = wordPackage(xml, [
+      {
+        path: "word/header.xml",
+        type: "header",
+        xml: wordStory("hdr", "Header"),
+      },
+    ]);
+    const variants: Record<string, Uint8Array>[] = [];
+    for (const path of [
+      "_rels/.rels",
+      "[Content_Types].xml",
+      "word/document.xml",
+      "word/header.xml",
+    ]) {
+      const files = { ...base };
+      delete files[path];
+      variants.push(files);
+    }
+    variants.push({
+      ...base,
+      "[Content_Types].xml": strToU8(
+        strFromU8(base["[Content_Types].xml"]!).replace(
+          "wordprocessingml.header+xml",
+          "wordprocessingml.comments+xml",
+        ),
+      ),
+    });
+    for (const target of [
+      "../../escape.xml",
+      "https://outside.invalid/main.xml",
+      "%2e%2e/%2e%2e/escape.xml",
+    ])
+      variants.push({
+        ...base,
+        "_rels/.rels": strToU8(
+          strFromU8(base["_rels/.rels"]!).replace(
+            'Target="word/document.xml"',
+            `Target="${target}"`,
+          ),
+        ),
+      });
+    variants.push({
+      ...base,
+      "_rels/.rels": strToU8(
+        strFromU8(base["_rels/.rels"]!).replace(
+          'Target="word/document.xml"',
+          'Target="word/document.xml" TargetMode="External"',
+        ),
+      ),
+    });
+    for (const files of variants)
+      await expect(
+        prepareDocument(file("invalid.docx", zipSync(files))),
+      ).rejects.toThrow("Invalid document archive");
   });
 
   it("exports EPUB with first uncompressed mimetype, valid package metadata and intact assets", async () => {
