@@ -1360,4 +1360,7 @@ test("password-protected PDF rejects wrong passwords and exports a real translat
   expect(persisted).not.toContain("yaku-test-only");
   await page.screenshot({
     path: path.join(screenshotDir, "password-pdf-real-model.png"),
-    fullPage: tr
+    fullPage: true,
+  });
+  await page.close();
+});
