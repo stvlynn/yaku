@@ -240,6 +240,7 @@ export function useExtensionController(surface: Surface) {
     setFileResult("");
     setFileProgress(undefined);
     const outputs: string[] = [];
+    let documentPreview: (() => string) | undefined;
     try {
       const translate: typeof translateText = async (input) => {
         const abort = () => {
@@ -254,7 +255,7 @@ export function useExtensionController(surface: Surface) {
           });
           controller.signal.throwIfAborted();
           outputs.push(result.text);
-          setFileResult(outputs.join("\n\n"));
+          if (!documentPreview) setFileResult(outputs.join("\n\n"));
           return result;
         } finally {
           controller.signal.removeEventListener("abort", abort);
@@ -319,10 +320,16 @@ export function useExtensionController(surface: Surface) {
         setFileResult(result.translation);
       } else {
         const prepared = await prepareDocument(file);
+        documentPreview = prepared.translationPreview;
         blob = await translateDocument(prepared, {
           ...options,
           bilingual: preferences.mode === "bilingual",
+          onProgress: (completed, total) => {
+            options.onProgress(completed, total);
+            if (documentPreview) setFileResult(documentPreview());
+          },
         });
+        setFileResult(documentPreview?.() ?? outputs.join("\n\n"));
         name = prepared.name;
       }
       controller.signal.throwIfAborted();

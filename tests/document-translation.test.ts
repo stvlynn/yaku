@@ -515,7 +515,7 @@ describe("document format round trips", () => {
     expect(content).toContain("TR(Hello");
     expect(
       (await prepareDocument(file("again.epub", bytes))).segments,
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it("rejects malformed ASS without corrupting fields and cancels before exporting a partial document", async () => {

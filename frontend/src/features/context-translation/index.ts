@@ -1,6 +1,7 @@
 import type { Settings } from "../../entities/settings";
 import type { Translate } from "../../entities/translation";
 import { copy } from "../../shared/i18n";
+import { createRequestId } from "../../shared/request-id";
 import { contentThemeCss } from "../../shared/styles/content-theme";
 import {
   composedParent,
@@ -259,7 +260,7 @@ export function installContextTranslation(options: {
     const revision = generation;
     const settings = getSettings();
     const settingsKey = requestSettingsKey(settings);
-    const id = crypto.randomUUID();
+    const id = createRequestId();
     requestId = id;
     try {
       const output = await translate({
@@ -377,7 +378,7 @@ export function installContextTranslation(options: {
     const settingsKey = requestSettingsKey(settings);
     show(copy.translating, false, true);
     const revision = generation;
-    const id = crypto.randomUUID();
+    const id = createRequestId();
     requestId = id;
     inputEditor = element;
     let output;

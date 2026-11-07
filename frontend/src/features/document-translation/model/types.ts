@@ -17,6 +17,7 @@ export interface PreparedDocument {
   segments: Segment[];
   export: () => Promise<Blob>;
   preview: () => string;
+  translationPreview?: () => string;
   setLanguage?: (language: string, bilingual: boolean) => void;
 }
 

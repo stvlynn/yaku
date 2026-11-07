@@ -1,4 +1,5 @@
 export { createInlineCodec } from "./inline-codec";
+export type { InlineCodecOptions, InlineDecodeOptions } from "./inline-codec";
 export {
   collectOpenRoots,
   composedParent,

@@ -1,6 +1,19 @@
+import { createNativeTrackSelection } from "./lib/native-track-selection";
+export { chooseSubtitleTrack } from "./lib/track-picker";
+import { raceTrackAbort } from "./lib/track-loading";
+import type {
+  NativeTrackCommandOptions,
+  NativeTrackSelector,
+} from "./model/track-types";
+export type {
+  NativeTrackChoice,
+  NativeTrackSelector,
+  NativeTrackSelectionRequest,
+} from "./model/track-types";
 import type { Settings } from "../../entities/settings";
 import type { Translate } from "../../entities/translation";
 import { copy } from "../../shared/i18n";
+import { createRequestId } from "../../shared/request-id";
 import { captionAdapters } from "./lib/adapters";
 import { installDomCaptions } from "./lib/dom-captions";
 import { installTextTracks } from "./lib/text-tracks";
@@ -21,8 +34,9 @@ export interface VideoSubtitleOptions {
   adapters?: readonly DomCaptionAdapter[];
   debounceMs?: number;
   now?: () => number;
+  onTrackSelectionRequired?: NativeTrackSelector;
 }
-export interface SubtitleExportOptions {
+export interface SubtitleExportOptions extends NativeTrackCommandOptions {
   format?: "srt" | "vtt";
   mode?: Settings["mode"];
   includeLoaded?: boolean;
@@ -39,6 +53,11 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
   let generation = 0;
   let disposed = false;
   const history = new Map<string, SubtitleCue>();
+  const operations = new Set<AbortController>();
+  const cancelOperations = () => {
+    for (const operation of operations) operation.abort();
+    operations.clear();
+  };
   const scopes = createMediaScopes(options.document);
   let contextTarget:
     { media: HTMLMediaElement; scope: string; url: string } | undefined;
@@ -86,10 +105,20 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     if (media.length > 1) throw new Error(copy.subtitleSelectVideo);
     return media[0];
   }
-  function records(scope?: string) {
+  function records(scope?: string, trackId?: string) {
     for (const [id, cue] of history)
-      if (!scopes.active(cue.scope)) history.delete(id);
-    return [...history.values()].filter((cue) => !scope || cue.scope === scope);
+      if (
+        !scopes.active(cue.scope) ||
+        (cue.trackId && !native.validId(cue.trackId))
+      )
+        history.delete(id);
+    return [...history.values()].filter(
+      (cue) =>
+        (!scope || cue.scope === scope) &&
+        (trackId
+          ? cue.trackId === trackId
+          : !cue.trackId || native.isSelected(cue.trackId)),
+    );
   }
   function selectedScope(media?: HTMLMediaElement) {
     if (media) return scopes.mediaScope(media);
@@ -114,10 +143,11 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     ]);
   };
   let previousLanguage = languageKey();
-  function request(source: string) {
+  function request(source: string, sourceLanguage?: string) {
+    const actualSource = sourceLanguage ?? options.getSettings().sourceLanguage;
     const settings = options.getSettings();
     const key = JSON.stringify([
-      settings.sourceLanguage,
+      actualSource,
       settings.targetLanguage,
       settings.glossary,
       source,
@@ -126,9 +156,9 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     if (!pending) {
       pending = options
         .translate({
-          id: crypto.randomUUID(),
+          id: createRequestId(),
           text: source,
-          sourceLanguage: settings.sourceLanguage,
+          sourceLanguage: actualSource,
           targetLanguage: settings.targetLanguage,
           glossary: settings.glossary,
         })
@@ -187,34 +217,95 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
         (host) => hostname === host || hostname.endsWith(`.${host}`),
       ),
     );
-  const tracks = installTextTracks(runtime);
+  const native = createNativeTrackSelection(
+    runtime,
+    options.onTrackSelectionRequired,
+  );
+  const tracks = installTextTracks(runtime, native);
   const dom = installDomCaptions(runtime, adapters, options.debounceMs);
+  async function perform(
+    command: NativeTrackCommandOptions & {
+      all?: boolean;
+      aheadSeconds?: number;
+      media?: HTMLMediaElement;
+    },
+    purpose: "pretranslate" | "export",
+  ) {
+    if (disposed || !runtime.getSettings().subtitlesEnabled) return {};
+    const revision = generation;
+    const media = selectMedia(command.media);
+    const scope = selectedScope(media);
+    const operation = new options.document.defaultView!.AbortController();
+    operations.add(operation);
+    const url = options.document.location.href;
+    const watch = options.document.defaultView!.setInterval(() => {
+      if (
+        disposed ||
+        generation !== revision ||
+        options.document.location.href !== url ||
+        (scope && !scopes.active(scope))
+      )
+        operation.abort();
+    }, 100);
+    let lease: Awaited<ReturnType<typeof tracks.pretranslate>>;
+    try {
+      const observed = records(scope).some((cue) => cue.timing === "observed");
+      if (
+        media &&
+        !scope?.startsWith("meeting-") &&
+        (!observed ||
+          native.current(media) ||
+          command.trackId ||
+          command.acquire === true)
+      )
+        lease = await tracks.pretranslate({
+          ...command,
+          media,
+          purpose,
+          signal: operation.signal,
+        });
+      if (!lease)
+        await raceTrackAbort(dom.pretranslate(scope), operation.signal);
+      const trackId = lease?.trackId;
+      if (command.all)
+        for (const cue of records(scope, trackId)) {
+          const value = await raceTrackAbort(
+            request(cue.source, cue.sourceLanguage),
+            lease?.signal ?? operation.signal,
+          );
+          if (disposed || revision !== generation || (lease && !lease.valid()))
+            throw new DOMException("", "AbortError");
+          cue.translation = value;
+        }
+      if (operation.signal.aborted) throw new DOMException("", "AbortError");
+      return { scope, trackId };
+    } finally {
+      lease?.release();
+      options.document.defaultView!.clearInterval(watch);
+      operations.delete(operation);
+    }
+  }
   async function pretranslate(
-    options: {
+    command: NativeTrackCommandOptions & {
       all?: boolean;
       aheadSeconds?: number;
       media?: HTMLMediaElement;
     } = {},
   ) {
-    if (disposed || !runtime.getSettings().subtitlesEnabled) return;
-    const revision = generation;
-    const media = selectMedia(options.media);
-    const scope = selectedScope(media);
-    if (!scope?.startsWith("meeting-"))
-      await tracks.pretranslate({ ...options, media });
-    await dom.pretranslate(scope);
-    if (options.all)
-      for (const cue of records(scope)) {
-        if (disposed || revision !== generation) return;
-        const value = await request(cue.source);
-        if (disposed || revision !== generation) return;
-        cue.translation = value;
-      }
+    await perform(command, "pretranslate");
   }
   return {
     pretranslate,
-    getTranscript: (media?: HTMLMediaElement) =>
-      records(media ? scopes.mediaScope(media) : undefined)
+    getTracks: (media?: HTMLMediaElement) => {
+      const selected =
+        media ??
+        (options.document.querySelectorAll("video,audio").length === 1
+          ? options.document.querySelector<HTMLMediaElement>("video,audio")!
+          : undefined);
+      return selected ? native.choices(selected) : [];
+    },
+    getTranscript: (media?: HTMLMediaElement, trackId?: string) =>
+      records(media ? scopes.mediaScope(media) : undefined, trackId)
         .map((cue) => ({ ...cue }))
         .sort((a, b) => a.start - b.start),
     async exportSubtitles({
@@ -222,14 +313,24 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
       mode,
       includeLoaded = true,
       media: requestedMedia,
+      trackId: requestedTrack,
+      acquire,
     }: SubtitleExportOptions = {}): Promise<{ blob: Blob; name: string }> {
       const revision = generation;
-      const media = selectMedia(requestedMedia);
-      const scope = selectedScope(media);
-      await pretranslate({ all: includeLoaded, media });
+      const { scope, trackId } = await perform(
+        {
+          all: includeLoaded,
+          media: requestedMedia,
+          trackId: requestedTrack,
+          acquire,
+        },
+        "export",
+      );
       if (disposed || revision !== generation)
         throw new DOMException("", "AbortError");
-      const selected = records(scope).sort((a, b) => a.start - b.start);
+      const selected = records(scope, trackId).sort(
+        (a, b) => a.start - b.start,
+      );
       if (!selected.length) throw new Error(copy.subtitleNoCues);
       const timestamp = (time: number) => {
         const milliseconds = Math.max(0, Math.round(time * 1000));
@@ -271,19 +372,21 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     },
     refresh() {
       if (disposed) return;
+      cancelOperations();
       generation++;
       const revision = generation;
       const nextLanguage = languageKey();
       const changed = nextLanguage !== previousLanguage;
       previousLanguage = nextLanguage;
-      if (changed) for (const cue of records()) cue.translation = undefined;
+      if (changed)
+        for (const cue of history.values()) cue.translation = undefined;
       tracks.refresh();
       dom.refresh();
       if (changed && options.getSettings().subtitlesEnabled)
         void (async () => {
           for (const cue of records()) {
             if (disposed || revision !== generation) return;
-            const translated = await request(cue.source);
+            const translated = await request(cue.source, cue.sourceLanguage);
             if (disposed || revision !== generation) return;
             cue.translation = translated;
           }
@@ -294,6 +397,7 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     dispose() {
       if (disposed) return;
       disposed = true;
+      cancelOperations();
       contextTarget = undefined;
       options.document.removeEventListener("contextmenu", captureContext, true);
       generation++;

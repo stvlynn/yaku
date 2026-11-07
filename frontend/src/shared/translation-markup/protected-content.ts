@@ -54,7 +54,12 @@ export function copyProtectedContent(
   const copy =
     math || svg
       ? document.createElementNS(element.namespaceURI!, element.localName)
-      : document.createElement(tag);
+      : document.createElementNS(
+          element.namespaceURI,
+          element.prefix
+            ? `${element.prefix}:${element.localName}`
+            : element.localName,
+        );
   for (const attribute of element.attributes)
     if (
       safeAttributes.has(attribute.name) &&

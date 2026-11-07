@@ -3,6 +3,8 @@ import type { Settings } from "../../../entities/settings";
 export interface SubtitleCue {
   id: string;
   scope: string;
+  trackId?: string;
+  sourceLanguage?: string;
   source: string;
   translation?: string;
   speaker?: string;
@@ -23,7 +25,7 @@ export interface SubtitleRuntime {
   document: Document;
   getSettings: () => Settings;
   revision: () => number;
-  request: (source: string) => Promise<string>;
+  request: (source: string, sourceLanguage?: string) => Promise<string>;
   scope: (element: Element, adapter?: DomCaptionAdapter) => string | undefined;
   active: (scope: string) => boolean;
   record: (cue: SubtitleCue) => void;

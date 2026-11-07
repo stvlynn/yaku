@@ -1,4 +1,11 @@
 export const copy = {
+  chooseSubtitleTrack: "Choose captions",
+  subtitleSelectTrack: "Choose captions to continue.",
+  subtitleTrackLoadError: "The selected captions could not be loaded.",
+  subtitleTrackLoadTimeout: "The selected captions did not finish loading.",
+  subtitleTrackMissing: "The selected captions are no longer available.",
+  documentUnsupportedEncoding: "Unsupported document encoding",
+  documentInvalidEncoding: "The document's text encoding is invalid.",
   subtitleSelectVideo: "Choose a video before exporting captions.",
   alwaysSourceLanguages: "Always translate",
   neverSourceLanguages: "Never translate",
@@ -361,6 +368,10 @@ export const copy = {
     bo: "Tibetan",
   } as Record<string, string>,
 } as const;
+
+export function subtitleTrackLabel(index: number) {
+  return `Track ${index}`;
+}
 
 export function temporaryTranslationUntil(time: string) {
   return `Auto-translate until ${time}`;

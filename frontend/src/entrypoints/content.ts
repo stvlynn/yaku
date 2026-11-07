@@ -3,7 +3,10 @@ import {
   reliableLanguageObservation,
 } from "../features/page-translation";
 import { installContextTranslation } from "../features/context-translation";
-import { installVideoSubtitles } from "../features/video-subtitles";
+import {
+  installVideoSubtitles,
+  chooseSubtitleTrack,
+} from "../features/video-subtitles";
 import { installFloatingControl } from "../features/floating-control";
 import { installPageImages } from "../features/page-images";
 import { readSettings, onSettingsChanged } from "../features/preferences";
@@ -43,6 +46,7 @@ export default defineContentScript({
       request({ destination: "background", action: "translate", payload });
     let floating: ReturnType<typeof installFloatingControl> | undefined;
     const onError = (error: unknown) => {
+      if (error instanceof Error && error.name === "AbortError") return;
       const message = error instanceof Error ? error.message : String(error);
       if (window.top !== window)
         void request({
@@ -74,6 +78,8 @@ export default defineContentScript({
       translate,
       getSettings,
       onError,
+      onTrackSelectionRequired: (selection) =>
+        chooseSubtitleTrack(selection, getSettings().theme),
     });
     const images = installPageImages({
       document,

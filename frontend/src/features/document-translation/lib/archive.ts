@@ -1,38 +1,13 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from "fflate";
 import { readWordParts, wordSegments } from "./docx";
+import { prepareMarkup } from "./markup";
+import { decodeXmlBytes } from "./encoding";
 import { parseXml } from "./xml";
 import { copy } from "../../../shared/i18n";
 import type { PreparedDocument, Segment } from "../model/types";
 
 const dcNamespace = "http://purl.org/dc/elements/1.1/";
 const xmlNamespace = "http://www.w3.org/XML/1998/namespace";
-export function xmlTextSegments(document: Document): Segment[] {
-  const segments: Segment[] = [];
-  const walker = document.createTreeWalker(
-    document.documentElement,
-    NodeFilter.SHOW_TEXT,
-  );
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Text;
-    if (
-      !node.data.trim() ||
-      node.parentElement?.closest(
-        'head,script,style,code,pre,noscript,svg,math,[translate="no"]',
-      )
-    )
-      continue;
-    const source = node.data;
-    segments.push({
-      source,
-      write: (value, bilingual) => {
-        const translated = `${source.match(/^\s*/)?.[0] ?? ""}${value.trim()}${source.match(/\s*$/)?.[0] ?? ""}`;
-        node.data = bilingual ? `${source}\n${translated}` : translated;
-      },
-    });
-  }
-  return segments;
-}
-
 export async function archiveDocument(
   name: string,
   bytes: Uint8Array,
@@ -47,6 +22,9 @@ export async function archiveDocument(
       ),
   );
   const documents = new Map<string, Document>();
+  const markupDocuments = new Map<string, ReturnType<typeof prepareMarkup>>();
+  const currentDocument = (path: string) =>
+    markupDocuments.get(path)?.current() ?? documents.get(path)!;
   const segments: Segment[] = [];
   let packageDocument: Document | undefined;
   const contentPaths = new Set<string>();
@@ -59,13 +37,13 @@ export async function archiveDocument(
       !files["META-INF/container.xml"]
     )
       throw new Error(copy.documentInvalidEpub);
-    const container = parseXml(strFromU8(files["META-INF/container.xml"]));
+    const container = parseXml(decodeXmlBytes(files["META-INF/container.xml"]));
     const packagePath = container
       .getElementsByTagNameNS("*", "rootfile")[0]
       ?.getAttribute("full-path");
     if (!packagePath || !files[packagePath])
       throw new Error(copy.documentInvalidEpub);
-    packageDocument = parseXml(strFromU8(files[packagePath]));
+    packageDocument = parseXml(decodeXmlBytes(files[packagePath]));
     documents.set(packagePath, packageDocument);
     for (const item of packageDocument.getElementsByTagNameNS("*", "item")) {
       if (item.getAttribute("media-type") !== "application/xhtml+xml") continue;
@@ -87,18 +65,29 @@ export async function archiveDocument(
     }
   } else {
     for (const path of contentPaths) {
-      const document = parseXml(strFromU8(files[path]!));
+      const document = parseXml(decodeXmlBytes(files[path]!));
       documents.set(path, document);
-      segments.push(...xmlTextSegments(document));
+      const markup = prepareMarkup(document, `https://epub.invalid/${path}`);
+      markupDocuments.set(path, markup);
+      segments.push(...markup.segments);
     }
   }
   return {
     name,
     segments,
     preview: () =>
-      [...documents.values()]
+      [...documents.keys()]
+        .map(currentDocument)
         .map((document) => document.documentElement.textContent ?? "")
         .join("\n"),
+    translationPreview:
+      extension === "epub"
+        ? () =>
+            [...markupDocuments.values()]
+              .map((markup) => markup.translationPreview())
+              .filter(Boolean)
+              .join("\n\n")
+        : undefined,
     setLanguage(language, bilingual) {
       if (packageDocument) {
         const metadata = packageDocument.getElementsByTagNameNS(
@@ -129,10 +118,13 @@ export async function archiveDocument(
             .toISOString()
             .replace(/\.\d{3}Z$/, "Z");
         for (const path of contentPaths) {
-          const root = documents.get(path)!.documentElement;
+          const markup = markupDocuments.get(path)!;
+          markup.setLanguage(language);
+          const root = markup.current().documentElement;
           if (!bilingual) {
             root.setAttribute("lang", language);
             root.setAttributeNS(xmlNamespace, "xml:lang", language);
+            root.setAttribute("dir", "auto");
           }
         }
       }
@@ -144,7 +136,9 @@ export async function archiveDocument(
         output.mimetype = [strToU8("application/epub+zip"), { level: 0 }];
       for (const [path, data] of Object.entries(files)) {
         if (extension === "epub" && path === "mimetype") continue;
-        const document = documents.get(path);
+        const document = documents.has(path)
+          ? currentDocument(path)
+          : undefined;
         output[path] = document
           ? strToU8(new XMLSerializer().serializeToString(document))
           : data;

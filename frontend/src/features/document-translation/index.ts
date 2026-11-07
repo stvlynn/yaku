@@ -1,5 +1,7 @@
 import { copy } from "../../shared/i18n";
-import { archiveDocument, xmlTextSegments } from "./lib/archive";
+import { archiveDocument } from "./lib/archive";
+import { prepareMarkup } from "./lib/markup";
+import { decodeHtmlBytes } from "./lib/encoding";
 import { markdownDocument } from "./lib/markdown";
 import { subtitleDocument } from "./lib/subtitles";
 import {
@@ -41,6 +43,39 @@ export async function prepareDocument(file: File): Promise<PreparedDocument> {
       new Uint8Array(await file.arrayBuffer()),
       extension,
     );
+  if (extension === "html" || extension === "htm") {
+    const text = decodeHtmlBytes(new Uint8Array(await file.arrayBuffer()));
+    const document = new DOMParser().parseFromString(text, "text/html");
+    const markup = prepareMarkup(
+      document,
+      `https://document.invalid/${encodeURIComponent(file.name)}`,
+    );
+    const preview = () => {
+      const current = markup.current();
+      const doctype = current.doctype
+        ? `${new XMLSerializer().serializeToString(current.doctype)}\n`
+        : "";
+      return `${doctype}${current.documentElement.outerHTML}`;
+    };
+    return {
+      name,
+      segments: markup.segments,
+      preview,
+      translationPreview: markup.translationPreview,
+      setLanguage: (language, bilingual) => {
+        markup.setLanguage(language);
+        if (!bilingual) {
+          const root = markup.current().documentElement;
+          root.setAttribute("lang", language);
+          root.setAttribute("dir", "auto");
+          if (root.hasAttribute("xml:lang"))
+            root.setAttribute("xml:lang", language);
+        }
+      },
+      export: async () =>
+        new Blob([preview()], { type: "text/html;charset=utf-8" }),
+    };
+  }
   const text = await file.text();
   if (extension === "md") return markdownDocument(name, text);
   if (["srt", "vtt", "lrc", "ass"].includes(extension))
@@ -75,18 +110,6 @@ export async function prepareDocument(file: File): Promise<PreparedDocument> {
       segments,
       preview,
       export: async () => new Blob([preview()], { type: "application/json" }),
-    };
-  }
-  if (extension === "html" || extension === "htm") {
-    const document = new DOMParser().parseFromString(text, "text/html");
-    const segments = xmlTextSegments(document);
-    const preview = () =>
-      `<!doctype html>\n${document.documentElement.outerHTML}`;
-    return {
-      name,
-      segments,
-      preview,
-      export: async () => new Blob([preview()], { type: "text/html" }),
     };
   }
   return rangeDocument(

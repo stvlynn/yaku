@@ -5,6 +5,7 @@ import {
 import type { Translate, TranslationMode } from "../../../entities/translation";
 import { alreadyTargetLanguage, reliableLanguageObservation } from "./language";
 import { createInlineCodec } from "../../../shared/translation-markup";
+import { createRequestId } from "../../../shared/request-id";
 import {
   collectOpenRoots,
   composedParent,
@@ -376,7 +377,7 @@ export function createPageTranslator({
       });
       entry.codecCurrent = codec.isCurrent;
       entry.originals = codec.originals;
-      const id = crypto.randomUUID();
+      const id = createRequestId();
       requests.add(id);
       const result = await translate({
         id,

@@ -1,4 +1,4 @@
-import { strFromU8 } from "fflate";
+import { decodeXmlBytes } from "./encoding";
 import { copy } from "../../../shared/i18n";
 import type { Segment } from "../model/types";
 import { parseXml } from "./xml";
@@ -69,7 +69,7 @@ function partTarget(source: string, target: string): string {
 function xmlFile(files: Record<string, Uint8Array>, path: string): Document {
   const bytes = files[path];
   if (!bytes) return invalid();
-  return parseXml(strFromU8(bytes));
+  return parseXml(decodeXmlBytes(bytes));
 }
 interface PartRelationship {
   id: string;
