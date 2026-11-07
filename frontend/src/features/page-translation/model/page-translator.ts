@@ -120,7 +120,6 @@ export function createPageTranslator({
       settings.sourceLanguage,
       settings.glossary,
       settings.siteRules,
-      settings.alwaysSourceLanguages,
       settings.neverSourceLanguages,
     ]);
   };

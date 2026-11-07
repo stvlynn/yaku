@@ -1,5 +1,5 @@
 import { test, expect, chromium, type Page } from "@playwright/test";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -118,15 +118,13 @@ test("real content/background route source-language policy and fixed-expiry host
         await page.waitForTimeout(70);
       } while (Date.now() < until);
     }
-    async function grant(page: Page, action = "temporary-translation-state") {
+    async function grant(page: Page) {
+      const key = `temporaryTranslation:${new URL(page.url()).hostname}`;
       return bridge.evaluate(
-        ({ tabId, action }) =>
-          chrome.runtime.sendMessage({
-            destination: "background",
-            action,
-            payload: { tabId },
-          }),
-        { tabId: await tabId(page), action },
+        async (key) =>
+          (await chrome.storage.local.get(key))[key] as
+            { hostname: string; expiresAt: number } | undefined,
+        key,
       );
     }
     await settings({ temporaryDomainMinutes: 5 });
@@ -136,17 +134,47 @@ test("real content/background route source-language policy and fixed-expiry host
     expect((await content(manual, "translate-page")).ok).toBe(true);
     expect(await state(manual)).toBe(true);
     const first = await grant(manual);
-    expect(first.ok).toBe(true);
-    expect(first.value.hostname).toBe("temporary.policy.test");
-    expect(first.value.expiresAt).toBeGreaterThanOrEqual(before + 300_000);
-    expect(first.value.expiresAt).toBeLessThanOrEqual(Date.now() + 300_000);
+    expect(first).toBeDefined();
+    expect(first!.hostname).toBe("temporary.policy.test");
+    expect(first!.expiresAt).toBeGreaterThanOrEqual(before + 300_000);
+    expect(first!.expiresAt).toBeLessThanOrEqual(Date.now() + 300_000);
     await content(manual, "translate-page");
-    expect((await grant(manual)).value.expiresAt).toBe(first.value.expiresAt);
-    evidence.fixedGrant = first.value;
+    expect((await grant(manual))!.expiresAt).toBe(first!.expiresAt);
+    evidence.fixedGrant = first;
     const same = await fixture("temporary", "same-host");
     await expect.poll(() => state(same)).toBe(true);
     const sibling = await fixture("sibling", "separate-host");
     await inactive(sibling);
+    await manual.bringToFront();
+    await bridge.evaluate(() => chrome.action.openPopup());
+    // Native action popups are exposed as CDP page targets, outside the launching Playwright context's pages.
+    const port = (
+      await readFile(path.join(profile, "DevToolsActivePort"), "utf8")
+    )
+      .trim()
+      .split("\n")[0]!;
+    const popupConnection = await chromium.connectOverCDP(
+      `http://127.0.0.1:${port}`,
+    );
+    const popup = popupConnection
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((page) => page.url() === `chrome-extension://${id}/popup.html`);
+    expect(popup).toBeDefined();
+    await expect(popup!.getByText(/^Auto-translate until /)).toBeVisible();
+    evidence.nativePopupExpiry = await popup!
+      .getByText(/^Auto-translate until /)
+      .textContent();
+    await expect(
+      popup!.getByRole("button", { name: "Stop", exact: true }),
+    ).toBeVisible();
+    await popup!.screenshot({ path: path.join(output, "popup-temporary.png") });
+    await popup!.getByRole("button", { name: "Stop", exact: true }).click();
+    await expect(popup!.getByText(/^Auto-translate until /)).toHaveCount(0);
+    expect(await grant(manual)).toBeUndefined();
+    expect(await state(manual)).toBe(true);
+    await popup!.close();
+    expect((await content(manual, "translate-page")).ok).toBe(true);
     await bridge.evaluate(
       ({ hostname }) =>
         chrome.storage.local.set({
@@ -159,7 +187,7 @@ test("real content/background route source-language policy and fixed-expiry host
     );
     const expired = await fixture("temporary", "expired");
     await inactive(expired);
-    expect((await grant(expired)).value).toBeNull();
+    expect((await grant(expired))!.expiresAt).toBeLessThan(Date.now());
     await settings({ alwaysSourceLanguages: ["en"] });
     const always = await fixture("language", "always");
     const detection = await bridge.evaluate(
@@ -182,17 +210,6 @@ test("real content/background route source-language policy and fixed-expiry host
     });
     const blocked = await fixture("blocked", "never-site");
     await inactive(blocked);
-    expect((await grant(manual, "stop-temporary-translation")).ok).toBe(true);
-    expect(
-      await bridge.evaluate(
-        async () =>
-          (
-            await chrome.storage.local.get(
-              "temporaryTranslation:temporary.policy.test",
-            )
-          )["temporaryTranslation:temporary.policy.test"],
-      ),
-    ).toBeUndefined();
     const finalCache = await cache();
     expect(finalCache.ok).toBe(true);
     expect(finalCache.value).toMatchObject({ bytes: 0, complete: false });

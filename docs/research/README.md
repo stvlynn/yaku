@@ -8,6 +8,7 @@ Implementation starts from shipped behavior, primary documentation, and reproduc
 - [Page and context audit](page-context-audit.md): editor safety, React ownership, protected content, language detection, and browser acceptance boundaries.
 - [Design system](design-system.md): design sources and user journeys.
 - [Translation policy](translation-policy.md): source-language rules, temporary-domain precedence and implementation contract.
+- [Chinese script variants](chinese-variants.md): read-only OpenCC candidate, licensing, measured payload and normalization evaluation plan.
 - [Evidence ledger](evidence-ledger.md): REA identities and coverage.
 
 Static observations are not runtime acceptance. Outstanding scenarios stay open until exercised in a browser with the actual translation runtime.

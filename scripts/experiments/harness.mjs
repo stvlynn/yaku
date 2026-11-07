@@ -74,7 +74,13 @@ export async function launchExtension(surface = "options") {
         throw new Error(reply?.error ?? "No reply from extension.");
       return reply.value;
     };
-    return { context, page, send, browserVersion: context.browser().version() };
+    return {
+      context,
+      page,
+      send,
+      browserVersion: context.browser().version(),
+      backgroundIdentity,
+    };
   } catch (error) {
     await context.close();
     throw error;

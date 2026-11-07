@@ -185,6 +185,27 @@ The later frozen-build lifecycle regression used `scripts/experiments/offline-wo
 
 Use a small fixed corpus spanning short UI copy, paragraphs, punctuation, URLs, numbers, markup-like text, and untrusted instructions inside source text. Model output is untrusted text and must never become executable HTML. Measure translation quality independently from download and GPU throughput. The model's theoretical context limit and third-party benchmark claims do not establish browser suitability.
 
+## Measured source-language and Chinese-script instructions
+
+The production prompt originally ignored the explicitly selected source language. A fixed ambiguity experiment used the same pinned model, greedy generation and target `zh`. Declaring German/French in the request alone produced the English interpretation; adding the short source-language instruction corrected it:
+
+| Text / selected source | Original prompt | Explicit source instruction |
+| ---------------------- | --------------- | --------------------------- |
+| `Gift` / German        | 礼物            | 毒药                        |
+| `Gift` / English       | 礼物            | 礼物                        |
+| `pain` / French        | 疼痛            | 面包                        |
+| `pain` / English       | 疼痛            | 疼痛                        |
+
+`scripts/experiments/source-language-ablation.mjs` records the actual outputs. The selected change adds the measured hint only for an explicitly selected non-automatic source and only in translation tasks. Context translation now passes that source and rejects pending results after the effective source, target or glossary changes. Two focused input/selection regressions cover that stale-result boundary.
+
+The `zh-Hant` target already resolved to `Traditional Chinese` in `languageName`, but the original instruction returned Simplified characters in all three tested cases: mixed English/Simplified source, English-only library text, and already-Traditional source. An explicit English script instruction and a Chinese script instruction both produced Traditional output in all three. The Chinese instruction also retained the numeric `2`, whereas the English instruction rendered it as `兩`. The selected instruction applies only to the Traditional target. It is composed with existing formatting context and terminology, rather than replacing them; automatic-source translation to other targets retains the original prompt.
+
+`scripts/experiments/script-variant-ablation.mjs` retains all nine outputs. A separate combined request used the actual inline codec, a protected `npm install` marker and the `report → 報告書` glossary. Its real output decoded safely to `在星期五之前先閱讀<a href="/report">報告書</a>。訂單編號為731。現在執行<code>npm install</code>。` with the link, code and digits preserved. These results support a prompt correction; no conversion dependency was added.
+
+A broader full-content preservation prefix was rejected: although it retained mixed-language museum sentences, it changed `Order 24 ships on Friday` into a shipment-batch meaning. The original apparent omission of Chinese in the page fixture was instead traced to missing UTF-8 metadata and GBK browser decoding. With correct UTF-8, a passive background-message observation captured the complete original mixed text, and replay returned the exact complete page translation. See [the page/context audit](page-context-audit.md). EOS detection establishes generation completion, not universal semantic accuracy.
+
+The final normal-product regression ran the rebuilt extension with executed background SHA `4187e96cc0de5944e081be14006f26f90f8f6b9c66c70ba0bc81945fbd367043`, exactly matching the built file. It did not add experimental prompt context. Actual workspace source controls produced German `Gift → 毒药` and English `Gift → 礼物`; selecting the Traditional target produced `圖書館每天早上九點開門。學生需要2張票。`. A normal French-source request returned `pain → 面包`. The actual page renderer retained the glossary-linked `報告書`, original `/report` URL, protected `npm install` and numeric `731` in complete Traditional output. A UTF-8 mixed paragraph retained Monday closure and adult-accompaniment sentences, then restored the exact original text. Passive background-message observations confirmed the real source/target fields and that page context contained only the original codec instruction. `scripts/experiments/product-prompt-regression.mjs` reproduces this production acceptance; older ablation scripts naturally include extra prefixes and are not this final gate.
+
 ## Remaining limits
 
 1. Browser, built-extension, and offscreen-worker inference passed the recorded smoke tests on one machine. This is not a cross-device performance or compatibility guarantee.

@@ -43,7 +43,18 @@ export function translationPrompt(request: TranslationRequest): string {
   const terms = Object.entries(request.glossary ?? {})
     .map(([source, target]) => `${source} → ${target}`)
     .join("\n");
-  const context = request.context ? `Context:\n${request.context}\n\n` : "";
+  const instructions = [
+    request.context,
+    request.sourceLanguage && request.sourceLanguage !== "auto"
+      ? `The source text is in ${languageName(request.sourceLanguage)}. Interpret ambiguous words in that source language.`
+      : undefined,
+    request.targetLanguage === "zh-Hant"
+      ? "請將全部文字完整翻譯為繁體中文，輸出必須全部使用繁體字，不可使用簡體字。保留所有句子、數字與資訊，只輸出譯文。"
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const context = instructions ? `Context:\n${instructions}\n\n` : "";
   const terminology = terms ? `Use these translations:\n${terms}\n\n` : "";
   return `${context}${terminology}Translate the following segment into ${languageName(request.targetLanguage)}, without additional explanation.\n\n${request.text}`;
 }

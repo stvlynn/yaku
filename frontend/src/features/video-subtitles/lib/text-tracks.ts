@@ -13,6 +13,7 @@ export function installTextTracks(runtime: SubtitleRuntime) {
     { abort: AbortController; tracks: Set<TextTrack> }
   >();
   const cues = new Map<VTTCue, CueState>();
+  const previousStates = new WeakMap<VTTCue, CueState>();
   const cueIds = new WeakMap<VTTCue, string>();
   let nextId = 0;
   let disposed = false;
@@ -33,13 +34,27 @@ export function installTextTracks(runtime: SubtitleRuntime) {
     const cue = candidate as VTTCue;
     const scope = runtime.scope(media);
     if (!scope) return;
-    let current = cues.get(cue);
+    let current = cues.get(cue) ?? previousStates.get(cue);
+    if (
+      current &&
+      current.record.scope !== scope &&
+      cue.startTime === current.record.start &&
+      cue.endTime === current.record.end &&
+      (cue.text === current.source || cue.text === current.applied)
+    ) {
+      if (cue.text === current.applied) cue.text = current.source;
+      return;
+    }
     if (
       current &&
       current.record.scope === scope &&
+      cue.startTime === current.record.start &&
+      cue.endTime === current.record.end &&
       (cue.text === current.applied || cue.text === current.source)
-    )
+    ) {
+      cues.set(cue, current);
       return current;
+    }
     if (current && cue.text === current.applied) cue.text = current.source;
     const source = cue.text;
     const plain = cue.getCueAsHTML().textContent ?? source;
@@ -60,6 +75,7 @@ export function installTextTracks(runtime: SubtitleRuntime) {
     cueIds.set(cue, record.id);
     current = { cue, source, record, media };
     cues.set(cue, current);
+    previousStates.set(cue, current);
     runtime.record(record);
     return current;
   }

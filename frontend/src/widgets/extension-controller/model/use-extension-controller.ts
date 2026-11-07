@@ -249,6 +249,7 @@ export function useExtensionController(surface: Surface) {
         try {
           const result = await translateText({
             ...input,
+            sourceLanguage: preferences.sourceLanguage,
             glossary,
           });
           controller.signal.throwIfAborted();

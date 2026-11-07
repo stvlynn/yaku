@@ -232,3 +232,44 @@ it("exports room captions rather than participant video tracks on a meeting page
   expect(text).not.toContain("Source 0");
   expect(text).not.toContain("Source 1");
 });
+it("does not reassign unchanged old native cue objects to a new generic resource", async () => {
+  const { dom, media, tracks, controller } = fixture();
+  await vi.waitFor(() =>
+    expect(controller.getTranscript()[0]?.translation).toBeDefined(),
+  );
+  media[0]!.src = "second-resource.mp4";
+  media[0]!.dispatchEvent(new dom.window.Event("timeupdate"));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(controller.getTranscript()).toEqual([]);
+  tracks[0]!.cue.text = "Host supplied new resource captions";
+  media[0]!.dispatchEvent(new dom.window.Event("timeupdate"));
+  await vi.waitFor(() =>
+    expect(controller.getTranscript()[0]?.translation).toBeDefined(),
+  );
+  expect(controller.getTranscript().map((cue) => cue.source)).toEqual([
+    "Host supplied new resource captions",
+  ]);
+});
+it("exports exact native host retiming and accepts a retimed identical cue for a new resource", async () => {
+  const { dom, media, tracks, controller } = fixture();
+  await vi.waitFor(() =>
+    expect(controller.getTranscript()[0]?.translation).toBeDefined(),
+  );
+  tracks[0]!.cue.startTime = 10;
+  tracks[0]!.cue.endTime = 12;
+  media[0]!.dispatchEvent(new dom.window.Event("timeupdate"));
+  const retimed = await read((await controller.exportSubtitles()).blob);
+  expect(retimed).toContain("00:00:10.000 --> 00:00:12.000");
+  expect(retimed).not.toContain("00:00:00.000 -->");
+  media[0]!.src = "new-resource.mp4";
+  controller.refresh();
+  expect(controller.getTranscript()).toEqual([]);
+  tracks[0]!.cue.startTime = 20;
+  tracks[0]!.cue.endTime = 24;
+  media[0]!.dispatchEvent(new dom.window.Event("timeupdate"));
+  const replaced = await read((await controller.exportSubtitles()).blob);
+  expect(replaced).toContain("00:00:20.000 --> 00:00:24.000");
+  expect(controller.getTranscript()).toHaveLength(1);
+  expect(controller.getTranscript()[0]?.source).toBe("Source 0");
+});

@@ -112,6 +112,14 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
   );
   const nonce = crypto.randomUUID();
   const fixtureUrl = `https://context-fixture.test/reading?run=${nonce}`;
+  const policyFixtures = {
+    english:
+      "The museum opens at nine every morning. Visitors can buy tickets online. Children under six enter for free. Please keep your ticket until you leave. The final gallery contains a map of the city.",
+    french:
+      "Le musée ouvre à neuf heures chaque matin. Les visiteurs peuvent acheter leurs billets en ligne. Les enfants de moins de six ans entrent gratuitement. Veuillez conserver votre billet jusqu’à votre départ.",
+    mixed:
+      "The museum opens at nine every morning. Visitors can buy tickets online. 博物馆每周一闭馆，请提前安排您的参观时间。儿童可以免费参观，但需要由成年人陪同。",
+  };
   const errors: string[] = [];
   try {
     const require = createRequire(import.meta.url);
@@ -191,16 +199,25 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
         });
       if (url.pathname === "/react")
         return route.fulfill({
-          contentType: "text/html",
+          contentType: "text/html; charset=utf-8",
           body: `<!doctype html><html lang="en"><head><title>React reading fixture</title><style>body{font:20px/28px sans-serif;margin:40px}p{width:500px}</style></head><body><div id="root"></div><script src="/react.js?run=${nonce}"></script></body></html>`,
+        });
+      if (url.pathname === "/policy")
+        return route.fulfill({
+          contentType: "text/html; charset=utf-8",
+          body: `<!doctype html><html lang="en"><title>Source policy fixture</title><main>${Object.entries(
+            policyFixtures,
+          )
+            .map(([name, text]) => `<p id="${name}">${text}</p>`)
+            .join("")}</main></html>`,
         });
       if (url.pathname.startsWith("/frame"))
         return route.fulfill({
-          contentType: "text/html",
+          contentType: "text/html; charset=utf-8",
           body: `<!doctype html><html lang="en"><main><p id="frame-reading">Good morning.</p></main><textarea id="frame-input">Hello friend.</textarea></html>`,
         });
       return route.fulfill({
-        contentType: "text/html",
+        contentType: "text/html; charset=utf-8",
         body: `<!doctype html><html lang="en"><head><title>Context fixture</title></head><body style="font:18px/1.5 sans-serif;margin:30px"><h1 id="focus" tabindex="0" translate="no">Interaction fixture</h1><main><p id="reading">The bank <a href="https://example.com/rates">raised interest rates</a> after the meeting.</p><table><tr><td id="cell">Good morning.</td></tr></table><p class="skip">Excluded English text.</p></main><p id="hover">Good morning.</p><p id="pick">A friendly greeting.</p><textarea id="ime">Hello friend.</textarea><div id="rich" contenteditable="true" tabindex="0"><p>Hello <strong>friend</strong>.</p><p>Good morning.</p></div><iframe id="inactive" src="/frame-inactive?run=${nonce}" title="Inactive frame"></iframe><iframe id="active" src="/frame-active?run=${nonce}" title="Active frame"></iframe></body></html>`,
       });
     });
@@ -527,6 +544,116 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
     );
     expect(errors).toEqual([]);
     evidence.pageErrors = errors;
+    evidence.policyDetections = await bridge.evaluate(
+      async (fixtures) =>
+        Object.fromEntries(
+          await Promise.all(
+            Object.entries(fixtures).map(async ([name, text]) => [
+              name,
+              await chrome.i18n.detectLanguage(text),
+            ]),
+          ),
+        ),
+      policyFixtures,
+    );
+    await bridge.evaluate(async () => {
+      const settings = (await chrome.storage.local.get("settings"))
+        .settings as Settings;
+      await chrome.storage.local.set({
+        settings: {
+          ...settings,
+          mode: "bilingual",
+          sourceLanguage: "auto",
+          targetLanguage: "zh",
+          alwaysSourceLanguages: ["en"],
+          neverSourceLanguages: ["en", "zh"],
+        },
+      });
+    });
+    const policy = await context.newPage();
+    await policy.goto(`https://context-fixture.test/policy?run=${nonce}`);
+    expect(await policy.locator("#mixed").textContent()).toBe(
+      policyFixtures.mixed,
+    );
+    evidence.policyCharacterSet = await policy.evaluate(
+      () => document.characterSet,
+    );
+    await expect(policy.locator("[data-yaku-floating]")).toBeVisible();
+    await sendFixture(bridge, policy, "translate-page");
+    await expect(
+      policy.locator('#french [data-yaku-owned="translation"]'),
+    ).toContainText(/[\u3400-\u9fff]/u, { timeout: 180000 });
+    await expect(
+      policy.locator('#mixed [data-yaku-owned="translation"]'),
+    ).toContainText(/[\u3400-\u9fff]/u, { timeout: 180000 });
+    expect(
+      await policy.locator('#english [data-yaku-owned="translation"]').count(),
+    ).toBe(0);
+    expect(await policy.locator("#english").textContent()).toBe(
+      policyFixtures.english,
+    );
+    expect(await sendFixture(bridge, policy, "page-state")).toEqual({
+      ok: true,
+      value: true,
+    });
+    evidence.sourcePolicy = {
+      excludedEnglish: await policy.locator("#english").textContent(),
+      unmatchedFrench: await policy
+        .locator('#french [data-yaku-owned="translation"]')
+        .innerText(),
+      mixed: await policy
+        .locator('#mixed [data-yaku-owned="translation"]')
+        .innerText(),
+    };
+    await bridge.evaluate(async () => {
+      const settings = (await chrome.storage.local.get("settings"))
+        .settings as Settings;
+      await chrome.storage.local.set({
+        settings: { ...settings, neverSourceLanguages: [] },
+      });
+    });
+    await expect(
+      policy.locator('#english [data-yaku-owned="translation"]'),
+    ).toContainText(/[\u3400-\u9fff]/u, { timeout: 180000 });
+    evidence.removedSourceExclusion = await policy
+      .locator('#english [data-yaku-owned="translation"]')
+      .innerText();
+    await sendFixture(bridge, policy, "restore-page");
+    expect(await policy.locator("#english").textContent()).toBe(
+      policyFixtures.english,
+    );
+    expect(await sendFixture(bridge, policy, "page-state")).toEqual({
+      ok: true,
+      value: false,
+    });
+    await bridge.evaluate(() =>
+      chrome.runtime.sendMessage({
+        destination: "background",
+        action: "unload-model",
+      }),
+    );
+    await context.setOffline(true);
+    const offline = await bridge.evaluate(() =>
+      chrome.runtime.sendMessage({
+        destination: "background",
+        action: "prepare",
+      }),
+    );
+    expect(offline.ok).toBe(true);
+    const offlineTranslation = await bridge.evaluate(() =>
+      chrome.runtime.sendMessage({
+        destination: "background",
+        action: "translate",
+        payload: {
+          id: crypto.randomUUID(),
+          text: "Good evening.",
+          targetLanguage: "zh",
+        },
+      }),
+    );
+    expect(offlineTranslation.ok).toBe(true);
+    expect(offlineTranslation.value.text).toMatch(/[\u3400-\u9fff]/u);
+    evidence.offlineCurrentBuild = offlineTranslation.value;
   } finally {
     clearInterval(diagnosticTimer);
     if (fixture && !fixture.isClosed()) {

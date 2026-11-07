@@ -4,7 +4,7 @@ export const copy = {
   neverSourceLanguages: "Never translate",
   alwaysSourceHelp:
     "Automatically translate these languages unless a website rule blocks them.",
-  neverSourceHelp: "Skip reliably identified paragraphs in these languages.",
+  neverSourceHelp: "Skip paragraphs in these languages.",
   addLanguage: "Add language",
   removeLanguage: "Remove language",
   temporaryDomainDuration: "Temporary website translation",

@@ -167,8 +167,10 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
       }
       const existing = history.get(cue.id);
       if (existing && existing.source === cue.source) {
-        cue.start = Math.min(existing.start, cue.start);
-        cue.end = Math.max(existing.end, cue.end);
+        if (cue.timing === "observed") {
+          cue.start = Math.min(existing.start, cue.start);
+          cue.end = Math.max(existing.end, cue.end);
+        }
         if (cue.translation === undefined)
           cue.translation = existing.translation;
       }

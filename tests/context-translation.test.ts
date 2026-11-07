@@ -57,6 +57,36 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it.each(["input", "selection"])(
+    "preserves declared source language and rejects a stale %s result after it changes",
+    async (kind) => {
+      document.body.innerHTML = "<textarea>Gift</textarea><p>Gift</p>";
+      const settings = { ...defaultSettings, sourceLanguage: "de" };
+      let finish!: () => void;
+      const run = vi.fn<Translate>(
+        (request) =>
+          new Promise((resolve) => {
+            finish = () =>
+              resolve({ id: request.id, text: "毒药", elapsedMs: 0 });
+          }),
+      );
+      const controller = install(run, undefined, settings);
+      if (kind === "input") document.querySelector("textarea")!.focus();
+      else chooseText(document.querySelector("p")!);
+      const pending =
+        kind === "input"
+          ? controller.translateInput()
+          : controller.translateSelection();
+      expect(run.mock.calls[0]![0].sourceLanguage).toBe("de");
+      settings.sourceLanguage = "en";
+      finish();
+      await pending;
+      expect(document.querySelector("textarea")!.value).toBe("Gift");
+      expect(document.querySelector("p")!.textContent).toBe("Gift");
+      expect(shadow().querySelector("section")).toBeNull();
+    },
+  );
+
   it("does not start translation during IME composition", async () => {
     document.body.innerHTML = "<textarea>正在输入</textarea>";
     const input = document.querySelector("textarea")!;

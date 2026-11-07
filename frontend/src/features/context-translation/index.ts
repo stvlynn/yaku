@@ -26,6 +26,20 @@ export function installContextTranslation(options: {
   shadow.append(sheet);
   document.documentElement.append(host);
   let generation = 0;
+  const requestSettingsKey = (settings = getSettings()) =>
+    JSON.stringify([
+      settings.sourceLanguage,
+      settings.targetLanguage,
+      settings.glossary,
+    ]);
+  function currentRequest(revision: number, settingsKey: string) {
+    if (generation !== revision) return false;
+    if (settingsKey !== requestSettingsKey()) {
+      close();
+      return false;
+    }
+    return true;
+  }
   let panel: HTMLElement | undefined;
   let selected = "";
   let selectedContext = "";
@@ -244,26 +258,28 @@ export function installContextTranslation(options: {
     const result = show(copy.translating, false, true);
     const revision = generation;
     const settings = getSettings();
+    const settingsKey = requestSettingsKey(settings);
     const id = crypto.randomUUID();
     requestId = id;
     try {
       const output = await translate({
         id,
         text,
+        sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         glossary: settings.glossary,
         task,
         context: task === "explain" ? selectedContext : undefined,
       });
-      if (generation === revision) {
+      if (currentRequest(revision, settingsKey)) {
         requestId = undefined;
         show(output.text, false, false, settings.targetLanguage);
       }
     } catch (error) {
-      if (generation === revision)
+      if (currentRequest(revision, settingsKey))
         result.textContent =
           error instanceof Error ? error.message : String(error);
-      if (generation === revision) onError(error);
+      if (currentRequest(revision, settingsKey)) onError(error);
     } finally {
       if (requestId === id) requestId = undefined;
     }
@@ -358,6 +374,7 @@ export function installContextTranslation(options: {
     }
     if (!snapshot?.text.trim()) return;
     const settings = getSettings();
+    const settingsKey = requestSettingsKey(settings);
     show(copy.translating, false, true);
     const revision = generation;
     const id = crypto.randomUUID();
@@ -368,12 +385,13 @@ export function installContextTranslation(options: {
       output = await translate({
         id,
         text: snapshot.text,
+        sourceLanguage: settings.sourceLanguage,
         context: snapshot.codec?.instruction,
         targetLanguage: settings.targetLanguage,
         glossary: settings.glossary,
       });
     } catch (error) {
-      if (generation !== revision) return;
+      if (!currentRequest(revision, settingsKey)) return;
       if (generation === revision)
         show(error instanceof Error ? error.message : String(error));
       throw error;
@@ -383,7 +401,7 @@ export function installContextTranslation(options: {
         inputEditor = undefined;
       }
     }
-    if (generation !== revision) return;
+    if (!currentRequest(revision, settingsKey)) return;
     if (!editors.current(snapshot)) {
       close();
       return;
