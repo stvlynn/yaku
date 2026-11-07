@@ -4,7 +4,7 @@ import {
   LanguagePreferences,
   type PreferencesProps,
 } from "../features/preferences";
-import { copy } from "../shared/i18n";
+import { copy, temporaryTranslationUntil } from "../shared/i18n";
 import {
   Brand,
   Button,
@@ -16,6 +16,8 @@ export interface PopupPageProps extends PreferencesProps {
   status: ModelStatus;
   error?: string;
   pageTranslated?: boolean;
+  temporaryTranslationUntil?: number;
+  onStopTemporaryTranslation?: () => void;
   onTranslatePage: () => void;
   onRestorePage: () => void;
   onOpenWorkspace: () => void;
@@ -41,7 +43,7 @@ export function PopupPage(props: PopupPageProps) {
       <div className="popup-actions">
         <Button
           variant="primary"
-          disabled={busy}
+          disabled={busy && !props.pageTranslated}
           onClick={
             props.pageTranslated ? props.onRestorePage : props.onTranslatePage
           }
@@ -54,6 +56,21 @@ export function PopupPage(props: PopupPageProps) {
           <ArrowUpRight size={15} />
         </Button>
       </div>
+      {props.temporaryTranslationUntil && (
+        <div className="popup-temporary">
+          <span>
+            {temporaryTranslationUntil(
+              new Date(props.temporaryTranslationUntil).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            )}
+          </span>
+          <Button variant="ghost" onClick={props.onStopTemporaryTranslation}>
+            {copy.stopTemporaryTranslation}
+          </Button>
+        </div>
+      )}
       {(props.error || props.status.error) && (
         <Notice>{props.error || props.status.error}</Notice>
       )}

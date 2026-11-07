@@ -2,6 +2,8 @@ import {
   defaultSettings,
   validReadingColor,
   validGlossaryUrlPattern,
+  validSourceLanguage,
+  temporaryDomainDurations,
   type Settings,
 } from "../../entities/settings";
 import { languages } from "../../entities/translation";
@@ -36,6 +38,17 @@ export function validateSettings(value: unknown): Settings {
   )
     throw new Error(copy.invalidSettings);
   const result = { ...defaultSettings, ...value };
+  if (
+    ![result.alwaysSourceLanguages, result.neverSourceLanguages].every(
+      (list) => Array.isArray(list) && list.every(validSourceLanguage),
+    ) ||
+    !temporaryDomainDurations.some(
+      (value) => value === result.temporaryDomainMinutes,
+    )
+  )
+    throw new Error(copy.invalidSettings);
+  result.alwaysSourceLanguages = [...new Set(result.alwaysSourceLanguages)];
+  result.neverSourceLanguages = [...new Set(result.neverSourceLanguages)];
   const codes = new Set<string>(languages.map(([code]) => code));
   if (
     !["before", "after"].includes(result.translationPosition) ||

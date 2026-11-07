@@ -31,16 +31,26 @@ export function installTextTracks(runtime: SubtitleRuntime) {
     )
       return;
     const cue = candidate as VTTCue;
+    const scope = runtime.scope(media);
+    if (!scope) return;
     let current = cues.get(cue);
     if (
       current &&
+      current.record.scope === scope &&
       (cue.text === current.applied || cue.text === current.source)
     )
       return current;
+    if (current && cue.text === current.applied) cue.text = current.source;
     const source = cue.text;
     const plain = cue.getCueAsHTML().textContent ?? source;
     const record: SubtitleCue = {
-      id: current?.record.id ?? cueIds.get(cue) ?? `track-${++nextId}`,
+      id:
+        current?.record.scope === scope
+          ? current.record.id
+          : cueIds.get(cue)?.startsWith(`${scope}:`)
+            ? cueIds.get(cue)!
+            : `${scope}:track-${++nextId}`,
+      scope,
       source: plain,
       start: cue.startTime,
       end: cue.endTime,
@@ -94,7 +104,8 @@ export function installTextTracks(runtime: SubtitleRuntime) {
         revision !== runtime.revision() ||
         !runtime.getSettings().subtitlesEnabled ||
         current.source !== source ||
-        !media.isConnected
+        !media.isConnected ||
+        runtime.scope(media) !== current.record.scope
       )
         return;
       if (current.cue.text !== source && current.cue.text !== current.applied)
@@ -138,7 +149,13 @@ export function installTextTracks(runtime: SubtitleRuntime) {
         media.addEventListener("loadedmetadata", scan, {
           signal: abort.signal,
         });
-        for (const event of ["play", "seeked", "timeupdate"])
+        for (const event of [
+          "play",
+          "seeked",
+          "timeupdate",
+          "loadedmetadata",
+          "emptied",
+        ])
           media.addEventListener(
             event,
             () => {
@@ -188,17 +205,25 @@ export function installTextTracks(runtime: SubtitleRuntime) {
   observer.observe(runtime.document.documentElement, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: ["src", "srcset"],
   });
   scan();
   return {
     async pretranslate({
       all = false,
       aheadSeconds = 30,
-    }: { all?: boolean; aheadSeconds?: number } = {}) {
+      media: selected,
+    }: {
+      all?: boolean;
+      aheadSeconds?: number;
+      media?: HTMLMediaElement;
+    } = {}) {
       scan();
       for (const [media, binding] of bindings)
-        for (const track of binding.tracks)
-          await update(media, track, all, aheadSeconds);
+        if (!selected || selected === media)
+          for (const track of binding.tracks)
+            await update(media, track, all, aheadSeconds);
     },
     refresh() {
       restore();

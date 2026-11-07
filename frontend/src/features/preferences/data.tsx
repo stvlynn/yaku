@@ -4,7 +4,7 @@ import { copy } from "../../shared/i18n";
 import { Button, Group, Notice, Toggle } from "../../shared/ui";
 import { validateSettings } from "./model";
 import type { PreferencesProps } from "./contracts";
-import { defaultSettings } from "../../entities/settings";
+import { createDefaultSettings } from "../../entities/settings";
 import { retryPreferencesSync, type PreferencesSyncStatus } from "./sync";
 export function DataPreferences({
   preferences,
@@ -96,11 +96,7 @@ export function DataPreferences({
         <Button
           variant="ghost"
           onClick={() => {
-            onPreferencesChange({
-              ...defaultSettings,
-              siteRules: [],
-              glossary: {},
-            });
+            onPreferencesChange(createDefaultSettings());
             setError("");
             setMessage(copy.resetSuccess);
           }}

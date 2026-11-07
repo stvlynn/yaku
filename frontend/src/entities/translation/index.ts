@@ -1,3 +1,4 @@
+import { languages } from "../../shared/languages";
 export type TranslationMode = "bilingual" | "translation";
 export type TranslationStyle =
   "plain" | "underline" | "highlight" | "quote" | "blur";
@@ -42,41 +43,7 @@ export function isModelStatus(value: unknown): value is ModelStatus {
   );
 }
 
-export const languages = [
-  ["en", "English"],
-  ["zh", "Chinese"],
-  ["zh-Hant", "Traditional Chinese"],
-  ["ja", "Japanese"],
-  ["ko", "Korean"],
-  ["fr", "French"],
-  ["de", "German"],
-  ["es", "Spanish"],
-  ["pt", "Portuguese"],
-  ["it", "Italian"],
-  ["ru", "Russian"],
-  ["ar", "Arabic"],
-  ["hi", "Hindi"],
-  ["th", "Thai"],
-  ["vi", "Vietnamese"],
-  ["id", "Indonesian"],
-  ["tr", "Turkish"],
-  ["pl", "Polish"],
-  ["nl", "Dutch"],
-  ["uk", "Ukrainian"],
-  ["cs", "Czech"],
-  ["ro", "Romanian"],
-  ["hu", "Hungarian"],
-  ["el", "Greek"],
-  ["he", "Hebrew"],
-  ["fa", "Persian"],
-  ["ms", "Malay"],
-  ["tl", "Filipino"],
-  ["bn", "Bengali"],
-  ["ta", "Tamil"],
-  ["te", "Telugu"],
-  ["ur", "Urdu"],
-  ["bo", "Tibetan"],
-] as const;
+export { languages } from "../../shared/languages";
 
 export function languageName(code: string): string {
   return languages.find(([id]) => id === code)?.[1] ?? code;

@@ -410,6 +410,14 @@ svg {
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
+.popup-temporary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
 .popup-footer > p {
   color: var(--muted-foreground);
   font-size: 11px;
@@ -1197,6 +1205,49 @@ svg {
   padding: 16px 18px;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
+}
+.language-rule {
+  border-top: 1px solid var(--border);
+}
+.language-rule-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.language-rule-values {
+  padding: 0 18px 14px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.language-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--muted);
+  border-radius: var(--radius-control);
+  padding: 2px 3px 2px 10px;
+  font-size: 12px;
+}
+.language-chip .icon-button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+@media (max-width: 600px) {
+  .language-rule .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .language-rule-actions {
+    justify-content: flex-start;
+  }
+  .language-rule-actions .select-trigger {
+    flex: 1;
+  }
 }
 .glossary-toolbar > .select-trigger {
   flex: 1;

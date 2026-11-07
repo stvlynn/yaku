@@ -7,6 +7,7 @@ import {
   type PreferencesProps,
 } from "./contracts";
 import { AppearancePreferences } from "./appearance";
+import { SourceLanguagePreferences } from "./language-rules";
 export function LanguagePreferences({
   preferences,
   onPreferencesChange,
@@ -54,6 +55,10 @@ export function LanguagePreferences({
           onChange={(targetLanguage) => onPreferencesChange({ targetLanguage })}
         />
       </SettingRow>
+      <SourceLanguagePreferences
+        preferences={preferences}
+        onPreferencesChange={onPreferencesChange}
+      />
     </Group>
   );
 }

@@ -24,7 +24,7 @@ export function installDomCaptions(
   const states = new Map<Element, CaptionState>();
   const latest = new WeakMap<
     Element,
-    { id: string; source: string; speaker?: string }
+    { id: string; scope: string; source: string; speaker?: string }
   >();
   let disposed = false;
   let nextId = 0;
@@ -143,6 +143,7 @@ export function installDomCaptions(
       revision !== runtime.revision() ||
       version !== state.version ||
       !state.element.isConnected ||
+      runtime.scope(state.element, state.adapter) !== state.cue.scope ||
       read(state.element, state.adapter.speakerSelector) !== source ||
       !runtime.getSettings().subtitlesEnabled
     )
@@ -210,9 +211,17 @@ export function installDomCaptions(
           )
         )
           continue;
+        const scope = runtime.scope(element, adapter);
+        if (!scope) continue;
         found.add(element);
         const source = read(element, adapter.speakerSelector);
         let state = states.get(element);
+        if (state && state.cue.scope !== scope) {
+          state.version++;
+          restore(state);
+          states.delete(element);
+          state = undefined;
+        }
         const name = speaker(element, adapter);
         if (!source) {
           if (state) {
@@ -235,6 +244,7 @@ export function installDomCaptions(
           if (!continuing)
             state.cue = {
               id: `dom-${++nextId}`,
+              scope,
               source,
               speaker: name,
               start: time(state),
@@ -249,7 +259,9 @@ export function installDomCaptions(
           const clock = time({ element, adapter });
           const previous = latest.get(element);
           const id =
-            previous?.source === source && previous.speaker === name
+            previous?.scope === scope &&
+            previous.source === source &&
+            previous.speaker === name
               ? previous.id
               : `dom-${++nextId}`;
           state = {
@@ -260,6 +272,7 @@ export function installDomCaptions(
             sources: [],
             cue: {
               id,
+              scope,
               source,
               speaker: name,
               start: clock,
@@ -271,7 +284,7 @@ export function installDomCaptions(
           states.set(element, state);
         }
         runtime.record(state.cue);
-        latest.set(element, { id: state.cue.id, source, speaker: name });
+        latest.set(element, { id: state.cue.id, scope, source, speaker: name });
         const current = state;
         const revision = runtime.revision();
         const version = state.version;
@@ -298,13 +311,17 @@ export function installDomCaptions(
   observe();
   scan();
   return {
-    async pretranslate() {
+    async pretranslate(selectedScope?: string) {
       scan();
       await Promise.all(
-        [...states.values()].map((state) => {
-          if (state.timer) clearTimeout(state.timer);
-          return render(state);
-        }),
+        [...states.values()]
+          .filter(
+            (state) => !selectedScope || state.cue.scope === selectedScope,
+          )
+          .map((state) => {
+            if (state.timer) clearTimeout(state.timer);
+            return render(state);
+          }),
       );
     },
     refresh() {

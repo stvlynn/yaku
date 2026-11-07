@@ -1,8 +1,18 @@
 import { useRef, useState } from "react";
 import { Check, Pencil, Plus, Trash2 } from "lucide-react";
-import type { SiteRule } from "../../entities/settings";
-import { copy } from "../../shared/i18n";
-import { Button, Choice, Group, IconButton, Notice } from "../../shared/ui";
+import {
+  temporaryDomainDurations,
+  type SiteRule,
+} from "../../entities/settings";
+import { copy, temporaryTranslationDuration } from "../../shared/i18n";
+import {
+  Button,
+  Choice,
+  Group,
+  IconButton,
+  Notice,
+  SettingRow,
+} from "../../shared/ui";
 import type { PreferencesProps } from "./contracts";
 import { validHostname } from "./model";
 
@@ -35,6 +45,22 @@ export function WebsitePreferences({
   }
   return (
     <Group>
+      <SettingRow
+        label={copy.temporaryDomainDuration}
+        description={copy.temporaryDomainHelp}
+      >
+        <Choice
+          label={copy.temporaryDomainDuration}
+          value={String(preferences.temporaryDomainMinutes)}
+          options={temporaryDomainDurations.map((value) => ({
+            value: String(value),
+            label: temporaryTranslationDuration(value),
+          }))}
+          onChange={(value) =>
+            onPreferencesChange({ temporaryDomainMinutes: Number(value) })
+          }
+        />
+      </SettingRow>
       <form
         className="rule-form"
         onSubmit={(event) => {

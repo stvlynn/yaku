@@ -22,9 +22,9 @@ The native PDF download test produced a two-page PDF with the source page's exac
 
 ## Acceptance still in progress
 
-- The integrated build passes strict TypeScript, import boundaries and 130 unit tests. OPFS allocation/write failures and lifecycle serialization have controlled regression coverage; physical disk exhaustion has not been simulated.
+- The integrated build passes strict TypeScript, import boundaries and 150 unit tests. OPFS allocation/write failures and lifecycle serialization have controlled regression coverage; physical disk exhaustion has not been simulated.
 - Protected-PDF missing/incorrect/correct password journeys and real translated PDF export passed. Passwords were absent from extension storage after the test.
-- Real Chrome regression for React-preserving page rendering, context/editor interactions, scoped glossaries and lazy-image batches is in progress.
+- The prior integrated build passed real Chrome React-preserving page rendering, context/editor interactions and lazy-image batches, with its actual executing background source checked. Offline unload/queued translation and offscreen recreation completed without HTTP requests. The next build adds source-language policies, temporary website activation, DOCX story traversal and scoped subtitle history; their browser regression is in progress.
 - Broader input/editor, subtitle-platform, PDF-layout and image-reader scenarios.
 - Original-extension runtime comparison and site-specific differences.
 - Visual review after all final surface changes.

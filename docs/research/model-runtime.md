@@ -6,13 +6,13 @@ Use the exact base-model identity `tencent/Hy-MT2-1.8B`. Real browser translatio
 
 ## Model artifacts
 
-| Artifact | Evidence | Consequence |
-| --- | --- | --- |
-| Official base model | [`tencent/Hy-MT2-1.8B` files](https://huggingface.co/tencent/Hy-MT2-1.8B/tree/main) include a 4.08 GB `model.safetensors`, tokenizer files, and no `onnx/` directory. | Do not point a browser ONNX loader at this repository and expect inference. |
-| Architecture | [Official config](https://huggingface.co/tencent/Hy-MT2-1.8B/blob/main/config.json) declares `HunYuanDenseV1ForCausalLM`, `hunyuan_v1_dense`, 32 layers, 4 KV heads, head dimension 128, BF16, and a 262144 position limit. | This is a decoder-only generation model. Keep browser input budgets much smaller than the advertised context limit. |
-| Compact official variants | [Official model card](https://huggingface.co/tencent/Hy-MT2-1.8B) lists FP8 and GGUF variants, including extreme low-bit versions. | GGUF is not an ONNX artifact; a 440 MB GGUF marketing figure is not the size of a Transformers.js download. |
-| Transformers.js candidate | [`DavidLuong/Hy-MT2-1.8B-ONNX-q4f16`](https://huggingface.co/DavidLuong/Hy-MT2-1.8B-ONNX-q4f16) exists but has no model card. | Export method, numerical fidelity, full dependency list, license files, and browser behavior need verification. |
-| Mirror candidate | [`LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror`](https://huggingface.co/LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror) claims a byte-identical mirror of upstream commit `cb415ae`; its [file list](https://huggingface.co/LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror/tree/main) totals about 1.38 GB. | It has a conventional Transformers.js file layout. This is useful for a spike, not proof of reproducible provenance. |
+| Artifact                  | Evidence                                                                                                                                                                                                                                                                                       | Consequence                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Official base model       | [`tencent/Hy-MT2-1.8B` files](https://huggingface.co/tencent/Hy-MT2-1.8B/tree/main) include a 4.08 GB `model.safetensors`, tokenizer files, and no `onnx/` directory.                                                                                                                          | Do not point a browser ONNX loader at this repository and expect inference.                                          |
+| Architecture              | [Official config](https://huggingface.co/tencent/Hy-MT2-1.8B/blob/main/config.json) declares `HunYuanDenseV1ForCausalLM`, `hunyuan_v1_dense`, 32 layers, 4 KV heads, head dimension 128, BF16, and a 262144 position limit.                                                                    | This is a decoder-only generation model. Keep browser input budgets much smaller than the advertised context limit.  |
+| Compact official variants | [Official model card](https://huggingface.co/tencent/Hy-MT2-1.8B) lists FP8 and GGUF variants, including extreme low-bit versions.                                                                                                                                                             | GGUF is not an ONNX artifact; a 440 MB GGUF marketing figure is not the size of a Transformers.js download.          |
+| Transformers.js candidate | [`DavidLuong/Hy-MT2-1.8B-ONNX-q4f16`](https://huggingface.co/DavidLuong/Hy-MT2-1.8B-ONNX-q4f16) exists but has no model card.                                                                                                                                                                  | Export method, numerical fidelity, full dependency list, license files, and browser behavior need verification.      |
+| Mirror candidate          | [`LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror`](https://huggingface.co/LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror) claims a byte-identical mirror of upstream commit `cb415ae`; its [file list](https://huggingface.co/LunarOilRig/Hy-MT2-1.8B-ONNX-q4f16-mirror/tree/main) totals about 1.38 GB. | It has a conventional Transformers.js file layout. This is useful for a spike, not proof of reproducible provenance. |
 
 The upstream conversion was downloaded at immutable revision `cb415aec769544c3f9cefdc312142b592e731bb9`. The graph contains 1,373,443,906 bytes. An independently computed SHA-256 matches both its LFS metadata and the mirror's published digest: `c0f5921fe143b05a420334392c59c175389d87dcfd60dc2554ca1c629eebec2a`.
 
@@ -66,13 +66,13 @@ The local research probe uses the installed Chrome through Playwright, `headless
 
 The GPU adapter exposed `shader-f16`; one model session loaded with `device: 'webgpu'`, `dtype: 'q4f16'`, and `use_external_data_format: false`. Both prompts use the model's chat template with greedy decoding and a 96-token output cap.
 
-| Observation | Result |
-| --- | --- |
-| Model load and initialization | 25.25 seconds, including loopback graph transfer and session creation |
-| English input | `The quick brown fox jumps over the lazy dog.` |
-| Chinese output | `敏捷的棕色狐狸跳过了懒狗。` in 7.78 seconds |
-| Chinese input | `今天天气很好，我们一起去公园散步。` |
-| English output | `The weather is great today; let’s go for a walk in the park together.` in 5.71 seconds |
+| Observation                   | Result                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| Model load and initialization | 25.25 seconds, including loopback graph transfer and session creation                   |
+| English input                 | `The quick brown fox jumps over the lazy dog.`                                          |
+| Chinese output                | `敏捷的棕色狐狸跳过了懒狗。` in 7.78 seconds                                            |
+| Chinese input                 | `今天天气很好，我们一起去公园散步。`                                                    |
+| English output                | `The weather is great today; let’s go for a walk in the park together.` in 5.71 seconds |
 
 These are two smoke cases on one machine, not quality or throughput benchmarks. CacheStorage insertion of the large ONNX response emitted `UnknownError: Failed to execute 'put' on 'Cache': Unexpected internal error`. Inference continued successfully from downloaded bytes. Therefore a successful load is explicitly **not evidence of offline readiness**. Test extension-origin storage separately and provide a deliberate large-file persistence strategy if its CacheStorage exhibits the same failure.
 
@@ -86,15 +86,15 @@ Artifact, extension-origin persistence, and real offscreen-worker feasibility ha
 
 ### Completed integration and cache ablation
 
-| Experiment | Observed result |
-| --- | --- |
-| Default browser CacheStorage, one large ONNX response | `Cache.put` failed with `UnknownError`; translation succeeded from memory, but persistence was not established. |
-| OPFS streaming writes in MV3 extension origin | All 7 files committed, exactly 1,383,140,565 bytes; preparation and translation succeeded. |
-| Cancellation before download | Preparation rejected with `AbortError` in 346 ms; cache remained incomplete with 0 committed bytes. An initially discovered race while waiting for the GPU adapter was corrected by creating the abort controller before requesting the adapter. |
-| Extension page unload, page reload, offline reinitialization | Reinitialization plus Chinese-to-English translation completed in 22.23 seconds; 0 model network requests and 0 downloaded bytes. |
-| Clear cache after inference | Model disposed; `cacheInfo` returned `complete: false`, `bytes: 0`. |
-| Actual WXT offscreen document and dedicated worker | With verified local files seeded into the same extension origin, network was disabled before preparation. Session loaded in 13.41 seconds; English-to-Chinese generation completed in 7.43 seconds. |
-| Actual offscreen destruction and recreation | The test closed the offscreen document, destroying its model worker. With networking still disabled, the background recreated both and translated Chinese to English in 20.04 seconds, including 7.22 seconds of generation. |
+| Experiment                                                   | Observed result                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Default browser CacheStorage, one large ONNX response        | `Cache.put` failed with `UnknownError`; translation succeeded from memory, but persistence was not established.                                                                                                                                  |
+| OPFS streaming writes in MV3 extension origin                | All 7 files committed, exactly 1,383,140,565 bytes; preparation and translation succeeded.                                                                                                                                                       |
+| Cancellation before download                                 | Preparation rejected with `AbortError` in 346 ms; cache remained incomplete with 0 committed bytes. An initially discovered race while waiting for the GPU adapter was corrected by creating the abort controller before requesting the adapter. |
+| Extension page unload, page reload, offline reinitialization | Reinitialization plus Chinese-to-English translation completed in 22.23 seconds; 0 model network requests and 0 downloaded bytes.                                                                                                                |
+| Clear cache after inference                                  | Model disposed; `cacheInfo` returned `complete: false`, `bytes: 0`.                                                                                                                                                                              |
+| Actual WXT offscreen document and dedicated worker           | With verified local files seeded into the same extension origin, network was disabled before preparation. Session loaded in 13.41 seconds; English-to-Chinese generation completed in 7.43 seconds.                                              |
+| Actual offscreen destruction and recreation                  | The test closed the offscreen document, destroying its model worker. With networking still disabled, the background recreated both and translated Chinese to English in 20.04 seconds, including 7.22 seconds of generation.                     |
 
 The actual-product test deliberately seeded already downloaded model fixtures to avoid another internet transfer; the separate MV3 page test exercised the production `downloadModel` implementation end to end. These are distinct pieces of evidence. Installed Chrome was `157.0.8103.38`. The actual-product test used normal GPU settings, without the initial loopback smoke test's GPU override flags.
 
@@ -106,21 +106,21 @@ Real page integration used an HTTP article containing an inline link and a dynam
 
 The same cached model, greedy decoding, language pair, and generation pipeline were used for each comparison. The fragment condition supplied the full paragraph as context for every fragment. Reported aggregate times include message overhead. These samples reveal failure modes; they do not establish a general quality score.
 
-| Source / condition | Actual output | Time |
-| --- | --- | --- |
-| `The bank raised interest rates after the meeting.` / whole paragraph | `银行在会议后提高了利率。` | 2.21 s |
-| Same source / fragments `The bank `, `raised interest rates`, ` after the meeting.` plus context | `银行` / `提高了利率` / `会议之后。` | 2.97 s aggregate |
-| `She gave the project a green light after reviewing the report.` / whole paragraph | `在审核了报告后，她批准了该项目。` | 3.22 s |
+| Source / condition                                                                                            | Actual output                                                              | Time             |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------- |
+| `The bank raised interest rates after the meeting.` / whole paragraph                                         | `银行在会议后提高了利率。`                                                 | 2.21 s           |
+| Same source / fragments `The bank `, `raised interest rates`, ` after the meeting.` plus context              | `银行` / `提高了利率` / `会议之后。`                                       | 2.97 s aggregate |
+| `She gave the project a green light after reviewing the report.` / whole paragraph                            | `在审核了报告后，她批准了该项目。`                                         | 3.22 s           |
 | Same source / fragments `She gave the project `, `a green light`, ` after reviewing the report.` plus context | `她在审核了报告之后，批准了这个项目。` / `绿灯信号` / `在审阅了报告之后。` | 7.17 s aggregate |
 
 In the first example the fragment outputs retain English phrase order, yielding `银行 提高了利率 会议之后。`. In the idiom example the first fragment translates meaning from the supplied full context while the second translates the idiom literally. The whole-paragraph condition avoids these observed problems.
 
 The third condition translates the whole paragraph with stable inline tags and an explicit instruction to preserve each tag around its corresponding translated phrase. The following outputs were observed, with exact opening/closing marker multisets in all three cases:
 
-| Tagged source | Actual output | Time |
-| --- | --- | --- |
-| `The bank <yaku-link id="0">raised interest rates</yaku-link> after the meeting.` | `银行在会议后<yaku-link id="0">提高了利率</yaku-link>。` | 8.19 s |
-| `She gave the project <yaku-link id="0">a green light</yaku-link> after reviewing the report.` | `在审阅了报告后，她给该项目<yaku-link id="0">开了绿灯</yaku-link>。` | 7.95 s |
+| Tagged source                                                                                              | Actual output                                                                                      | Time    |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------- |
+| `The bank <yaku-link id="0">raised interest rates</yaku-link> after the meeting.`                          | `银行在会议后<yaku-link id="0">提高了利率</yaku-link>。`                                           | 8.19 s  |
+| `She gave the project <yaku-link id="0">a green light</yaku-link> after reviewing the report.`             | `在审阅了报告后，她给该项目<yaku-link id="0">开了绿灯</yaku-link>。`                               | 7.95 s  |
 | `Read <yaku-link id="0">the full report</yaku-link> before Friday and save <yaku-em id="1">$20</yaku-em>.` | `请在周五之前阅读<yaku-link id="0">完整报告</yaku-link>，并保存<yaku-em id="1">20美元</yaku-em>。` | 10.95 s |
 
 Marker generation costs additional tokens and was slower than plain whole-paragraph generation in these samples. It preserved clause reordering and the idiom in the first two examples. The last example still interprets ambiguous `save` as `保存`; marker validity is not a guarantee of translation correctness.
@@ -133,14 +133,14 @@ The production marker implementation passed 16 page tests, including original no
 
 The same pinned q4f16 model was tested with three short inputs, each using an explicit task prompt and a normal translation prompt. Generation used greedy decoding with a 96-token cap; all six outputs finished below that cap. These initial probes used the browser loopback harness and are capability evidence, separate from UI integration acceptance.
 
-| Input / prompt | Actual output | Time |
-| --- | --- | --- |
-| `I has finish the report yesterday and send it to my boss.` / grammar rewrite | `I finished the report yesterday and sent it to my boss.` | 5.40 s |
-| Same input / translate into English | `I finished the report yesterday and sent it to my boss.` | 4.16 s |
-| `Send me report now.` / polite professional rewrite | `Please send me the report at your earliest convenience.` | 3.00 s |
-| Same input / translate into English | `Send me the report now.` | 1.93 s |
+| Input / prompt                                                                                                   | Actual output                                                                                | Time   |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------ |
+| `I has finish the report yesterday and send it to my boss.` / grammar rewrite                                    | `I finished the report yesterday and sent it to my boss.`                                    | 5.40 s |
+| Same input / translate into English                                                                              | `I finished the report yesterday and sent it to my boss.`                                    | 4.16 s |
+| `Send me report now.` / polite professional rewrite                                                              | `Please send me the report at your earliest convenience.`                                    | 3.00 s |
+| Same input / translate into English                                                                              | `Send me the report now.`                                                                    | 1.93 s |
 | `bank`, in `The bank raised interest rates.` / explain in Chinese, include part of speech and a short definition | `在中文句子中，“bank”作为名词，表示“银行”。其词性为名词，简短定义是：指提供金融服务的机构。` | 7.73 s |
-| Same word and context / translate into Chinese | `银行` | 0.72 s |
+| Same word and context / translate into Chinese                                                                   | `银行`                                                                                       | 0.72 s |
 
 Explicit task instructions produced the requested polite rewrite and word explanation in these samples. A translation-only prompt cannot stand in for those tasks. This evidence supports exposing limited grammar/polite rewriting and contextual explanations with the same model; it does not establish general writing quality, dictionary accuracy, or support for every language. Concise/formal writing modes were not validated and are rejected by the prompt builder rather than silently mapped to another mode. Non-translation prompt branches quote source/context as untrusted data and ask the model not to follow instructions inside them.
 
@@ -168,18 +168,20 @@ The model generated 42 tokens including EOS. The windowed path used six calls (8
 
 After integrating EOS-aware generation, a production-build regression again passed direct translation, offline offscreen-worker recreation, normal page inline-marker reconstruction, nested open-shadow translation, dynamic paragraphs, and exact restoration. The Chinese-page run explicitly set the output language for the fixture and restored the profile's previous preferences afterward. This avoids confusing another experiment's English writing preference with a model regression.
 
-| Gate | Controlled experiment | Evidence to capture / exit criterion |
-| --- | --- | --- |
-| P0 artifact identity | Resolve a full commit for the selected conversion. Enumerate config, tokenizer, graph, and external data; calculate sizes and SHA-256. Compare tokenizer/config with the official source. | Immutable artifact manifest; licensing and source attribution; no missing graph dependencies. |
-| P0 browser smoke | In an unpacked WXT MV3 build, load the candidate with pinned Transformers.js v4, `device: 'webgpu'`, `dtype: 'q4f16'`. Translate one short English sentence to Chinese and one Chinese sentence to English. | Actual session creation, coherent output, GPU/provider logs, and exact emitted network requests. Unit tests cannot satisfy this gate. |
-| P0 packaging | Block remote JS/WASM URLs while allowing model data. Run the same smoke case. | All executable requests resolve to `chrome-extension://`; no CSP errors. |
-| P0 offline lifecycle | Complete download, restart Chrome, disconnect networking, then translate. Close/reopen popup; terminate the background service worker and retry. | Cached assets work; one offscreen model instance; no data redownload; routing recovers. |
-| P1 precision | Compare verified q4f16 with a separately available compatible q4 or fp16 export of the same base revision. Keep prompts, decoding, inputs, and GPU fixed. | Cold/warm load, peak memory, first-token latency, tokens/sec, output fidelity. Never change only a dtype label when that artifact does not exist. |
-| P1 context | Test source budgets of 128, 256, 512, and 1024 tokens, one request at a time, with fixed output caps. | Memory, latency, truncation, repetition, omitted sentences; choose a measured budget. |
-| P1 prompt | Compare official translation instruction, the same instruction with source language, and glossary/context additions on a fixed bilingual fixture. | Translation-only compliance, terminology adherence, number/link preservation, human-rated meaning. |
-| P1 decoding | Greedy baseline versus official sampling settings, with fixed seed where supported. | Quality variance, hallucinations, latency; record at least repeated sampled outputs. |
-| P1 backend | Compare the same artifact on WebGPU and WASM only if both providers support all operators. Treat unsupported-provider errors as results. | Compatibility, memory, speed; no hidden automatic fallback. |
-| P1 resilience | Interrupt download; deny adapter; force worker termination; cancel generation; remove cache; test two simultaneous tabs and GPU device loss. | Explicit failure codes, recovery state, queue ordering, no duplicate downloads or sessions. |
+The later frozen-build lifecycle regression used `scripts/experiments/offline-worker.mjs` with an executed-background SHA equal to the built file. With Chrome networking disabled, preparation took 18.74 seconds; English-to-Chinese inference succeeded. Concurrent unload and a newly queued translation completed successfully with `晚上好。` in 19.36 seconds, exercising disposal followed by session recreation. Closing the complete offscreen document then requesting Chinese-to-English inference recreated the worker and returned `The weather is great today. Let’s go for a walk in the park together.` in 30.72 seconds. The cache remained complete at 1,383,140,565 bytes and recorded HTTP requests were empty. These are single-machine observations rather than latency guarantees. The profile was explicitly seeded from verified downloaded assets; the separate fresh production-download test remains the download-path evidence. See [page/context acceptance](page-context-audit.md) for the discovered persistent-service-worker build-identity limitation and test preflight.
+
+| Gate                 | Controlled experiment                                                                                                                                                                                       | Evidence to capture / exit criterion                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0 artifact identity | Resolve a full commit for the selected conversion. Enumerate config, tokenizer, graph, and external data; calculate sizes and SHA-256. Compare tokenizer/config with the official source.                   | Immutable artifact manifest; licensing and source attribution; no missing graph dependencies.                                                     |
+| P0 browser smoke     | In an unpacked WXT MV3 build, load the candidate with pinned Transformers.js v4, `device: 'webgpu'`, `dtype: 'q4f16'`. Translate one short English sentence to Chinese and one Chinese sentence to English. | Actual session creation, coherent output, GPU/provider logs, and exact emitted network requests. Unit tests cannot satisfy this gate.             |
+| P0 packaging         | Block remote JS/WASM URLs while allowing model data. Run the same smoke case.                                                                                                                               | All executable requests resolve to `chrome-extension://`; no CSP errors.                                                                          |
+| P0 offline lifecycle | Complete download, restart Chrome, disconnect networking, then translate. Close/reopen popup; terminate the background service worker and retry.                                                            | Cached assets work; one offscreen model instance; no data redownload; routing recovers.                                                           |
+| P1 precision         | Compare verified q4f16 with a separately available compatible q4 or fp16 export of the same base revision. Keep prompts, decoding, inputs, and GPU fixed.                                                   | Cold/warm load, peak memory, first-token latency, tokens/sec, output fidelity. Never change only a dtype label when that artifact does not exist. |
+| P1 context           | Test source budgets of 128, 256, 512, and 1024 tokens, one request at a time, with fixed output caps.                                                                                                       | Memory, latency, truncation, repetition, omitted sentences; choose a measured budget.                                                             |
+| P1 prompt            | Compare official translation instruction, the same instruction with source language, and glossary/context additions on a fixed bilingual fixture.                                                           | Translation-only compliance, terminology adherence, number/link preservation, human-rated meaning.                                                |
+| P1 decoding          | Greedy baseline versus official sampling settings, with fixed seed where supported.                                                                                                                         | Quality variance, hallucinations, latency; record at least repeated sampled outputs.                                                              |
+| P1 backend           | Compare the same artifact on WebGPU and WASM only if both providers support all operators. Treat unsupported-provider errors as results.                                                                    | Compatibility, memory, speed; no hidden automatic fallback.                                                                                       |
+| P1 resilience        | Interrupt download; deny adapter; force worker termination; cancel generation; remove cache; test two simultaneous tabs and GPU device loss.                                                                | Explicit failure codes, recovery state, queue ordering, no duplicate downloads or sessions.                                                       |
 
 Use a small fixed corpus spanning short UI copy, paragraphs, punctuation, URLs, numbers, markup-like text, and untrusted instructions inside source text. Model output is untrusted text and must never become executable HTML. Measure translation quality independently from download and GPU throughput. The model's theoretical context limit and third-party benchmark claims do not establish browser suitability.
 

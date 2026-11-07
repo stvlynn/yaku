@@ -22,11 +22,11 @@ The selected renderer does not reparent source nodes. Bilingual mode inserts the
 
 An installed-Chrome geometry fixture measured these alternatives with the same 310-pixel source paragraph and a 28-pixel synthetic target. This is a rendering experiment, not model inference:
 
-| Strategy | Result height | Original Text parent retained |
-| --- | --- | --- |
-| Hidden wrappers | 28 px | No |
-| Transparent custom highlights | 338 px | Yes |
-| Empty owned Text plus temporarily hidden original inline elements | 28 px | Yes |
+| Strategy                                                          | Result height | Original Text parent retained |
+| ----------------------------------------------------------------- | ------------- | ----------------------------- |
+| Hidden wrappers                                                   | 28 px         | No                            |
+| Transparent custom highlights                                     | 338 px        | Yes                           |
+| Empty owned Text plus temporarily hidden original inline elements | 28 px         | Yes                           |
 
 `scripts/experiments/rendering-strategies.mjs` reproduces the geometry measurement. Four real React reconciler tests cover conditional deletion and insertion before a sibling in bilingual/translation-only modes with before/after placement. Additional cases cover host empty-value changes and mode changes while language detection is pending. Appearance changes update the existing target's position/fonts/line height/colors without entering the translation settings key.
 
@@ -40,20 +40,32 @@ Actual HY-MT2 probes returned `现在运行 <yaku-keep id="0"></yaku-keep>。` a
 
 `scripts/experiments/language-detection.mjs` ran Chrome's actual [`i18n.detectLanguage`](https://developer.chrome.com/docs/extensions/reference/api/i18n) in a fresh isolated profile without a model. HTML language metadata was recorded independently from content detection.
 
-| Input | Chrome result |
-| --- | --- |
-| Long English paragraph | Reliable `en`, 100% |
-| French paragraph mislabeled `html.lang=en` | Reliable `fr`, 100% |
-| Mixed English/Chinese paragraph | Reliable `zh` 61%, `en` 38% |
-| `Gift` | Unreliable `no`, 100% |
-| `Hello world.` | Unreliable `ky`, 100% |
-| Simplified Chinese paragraph | Reliable `zh`, 100% |
-| Traditional Chinese paragraph | Reliable `zh`, 100% |
+| Input                                      | Chrome result               |
+| ------------------------------------------ | --------------------------- |
+| Long English paragraph                     | Reliable `en`, 100%         |
+| French paragraph mislabeled `html.lang=en` | Reliable `fr`, 100%         |
+| Mixed English/Chinese paragraph            | Reliable `zh` 61%, `en` 38% |
+| `Gift`                                     | Unreliable `no`, 100%       |
+| `Hello world.`                             | Unreliable `ky`, 100%       |
+| Simplified Chinese paragraph               | Reliable `zh`, 100%         |
+| Traditional Chinese paragraph              | Reliable `zh`, 100%         |
 
 Therefore metadata alone never skips translation. Automatic-source paragraphs skip only with a reliable single 100% candidate whose non-Chinese language code exactly matches the target. Unknown, mixed, short/unreliable, explicitly selected-source, and script-ambiguous Chinese cases retain normal translation. Chinese variants are not merged because this detector did not distinguish them. Skipped entries are invalidated on source/target/glossary changes and are not redetected for unrelated mutations.
+
+The later source-policy integration reuses the public `reliableLanguageObservation` conversion and the settings entity's `resolveSourceLanguagePolicy`. Reliably detected never-source paragraphs are excluded; an explicit declared source can also establish the observation. Uncertain/mixed detection does not exclude a paragraph. Both policy arrays participate in settings invalidation. The controller exposes `isActive()` so content orchestration can report the actual accepted scope, including rejection of missing selectors and never-site rules. Three new controlled regressions passed within the 37-test page suite; these later policy changes require the next centralized build's browser acceptance and are not included in the frozen-build run below.
 
 ## Lifecycle and remaining browser acceptance
 
 The page controller observes scope replacement and open shadow roots, invalidates language/glossary changes, and deduplicates SPA route notifications. It follows Navigation API events where available and checks route changes during DOM mutations; ordinary fragment anchors do not trigger full retranslation. Restore cancels outstanding work and stays restored after later route changes. Closed roots and an existing host acquiring a new shadow root without any observable outer mutation retain the documented platform boundaries.
 
 Focused context/page/React tests and type checking passed before centralized browser acceptance. The real-browser driver uses unique nonce URLs and asserts a unique target tab, because persistent profiles can restore old tabs with the same URL. It uses production closed shadow roots through CDP accessibility/box coordinates, native Chrome IME protocol events, real model inference, actual iframe focus, RTL/table/exclusion fixtures, and React 19. It does not call `runtime.reload`: CDP-loaded temporary extensions become disabled by that operation in the tested Chrome build. Successful browser results, installed local voice availability, and any OS-IME/audio limitations must be recorded separately after that run.
+
+### Verified current-build page acceptance
+
+The page-only production-build run passed in 1.4 minutes. The floating button translated the top paragraph, table cell, and both same-origin iframe paragraphs; the excluded paragraph remained untouched. Switching the target to Arabic replaced the existing output and retained `dir=auto`. Replacing the SPA main scope produced one translated target, and restore returned its exact source markup.
+
+The real React 19 fixture translated, deleted conditional Text, switched to translation-only mode, inserted Text again before an existing `strong` sibling, and restored the source without a page or reconciler error. Protected `npm install` remained exact in the target; a cloned MathML fraction remained visible. The translation-only paragraph and target both measured 28 pixels, with original Text parents retained, verifying the selected strategy without source-sized blank space. Local voices reported only Chinese/Japanese matches on this machine; English speech was therefore unavailable and pronunciation was not claimed.
+
+An important test-environment defect preceded this run: a reused persistent profile executed a 31,278-character older background script even after `Extensions.loadUnpacked` loaded the current directory. The resulting unknown-route error was not a model/parser regression. `Debugger.getScriptSource` proved its SHA differed from the build on disk. The documented CDP `ServiceWorker.updateRegistration` returned successfully but did not change that executed source. A fresh dedicated profile was explicitly seeded from the independently downloaded, hash-verified model fixture; this seed is separate from the successful fresh production-download experiment. Its executed background SHA matched the frozen build before inference. `scripts/experiments/background-identity.mjs` now performs this test-only source comparison; it does not add a product gate, reload the temporary extension, or erase model storage.
+
+The subsequent full current-build driver passed in 1.7 minutes with the same executed-build comparison. Chrome emitted a trusted `compositionstart` and composing input event; a translation command left its composition text unchanged. Ordinary input translated to `你好，朋友。` and explicit Undo restored the original. Rich contenteditable retained two paragraphs and its `strong` element, and Undo restored exact original HTML. Selection produced `友好的问候。`; Alt-hover produced `早上好。` and a second Alt closed the result. After focus moved between two iframe editors, only the current editor changed. The full run repeated page/RTL/SPA/React checks, produced `现在运行 <code>npm install</code>。` and a visible translated MathML fraction, and recorded zero page or React errors. This tests Chrome's IME protocol, not an operating-system candidate-picker interaction or native Ctrl+Z history. The separate offline-worker run also passed unload/queued translation and complete offscreen recreation with no HTTP requests.

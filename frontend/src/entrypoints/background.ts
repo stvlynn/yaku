@@ -3,8 +3,12 @@ import type { ModelStatus } from "../entities/translation";
 import { resolveGlossary } from "../entities/settings";
 import { copy } from "../shared/i18n";
 import { installPreferencesSync, readSettings } from "../features/preferences";
+import { createTemporaryTranslationStore } from "../features/temporary-translation";
 
 export default defineBackground(() => {
+  const temporaryTranslation = createTemporaryTranslationStore(
+    chrome.storage.local,
+  );
   const imageRequests = new Map<
     string,
     { url: string; tab: number; frame: number; batch?: string }
@@ -41,6 +45,38 @@ export default defineBackground(() => {
     if (!isEnvelope(message) || message.destination !== "background") return;
     if (sender.id !== chrome.runtime.id) return;
     const operation = async () => {
+      if (
+        [
+          "temporary-translation-state",
+          "start-temporary-translation",
+          "stop-temporary-translation",
+        ].includes(message.action)
+      ) {
+        const target =
+          sender.tab ??
+          (await chrome.tabs.get((message.payload as { tabId: number }).tabId));
+        const url = new URL(
+          sender.tab
+            ? (sender.url ?? target.url ?? "about:blank")
+            : (target.url ?? "about:blank"),
+        );
+        if (!["http:", "https:"].includes(url.protocol)) return null;
+        if (message.action === "start-temporary-translation") {
+          if (!sender.tab) throw new Error(copy.pageUnavailable);
+          const settings = await readSettings();
+          return (
+            (await temporaryTranslation.start(
+              url.hostname,
+              settings.temporaryDomainMinutes,
+            )) ?? null
+          );
+        }
+        if (message.action === "stop-temporary-translation") {
+          await temporaryTranslation.stop(url.hostname);
+          return null;
+        }
+        return (await temporaryTranslation.read(url.hostname)) ?? null;
+      }
       if (message.action === "cancel-image-batch") {
         const { sessionId } = message.payload as { sessionId: string };
         const session = await getImageBatch(sessionId);

@@ -120,7 +120,7 @@ describe("representative DOM caption adapters, fixture verified only", () => {
     const pending: { source: string; complete: (text: string) => void }[] = [];
     const { controller, run } = setup(
       "youtube",
-      '<div class="caption-window">Hello</div>',
+      '<video></video><div class="caption-window">Hello</div>',
       (request) =>
         new Promise((resolve) =>
           pending.push({

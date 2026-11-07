@@ -4,6 +4,7 @@ import { copy } from "../../shared/i18n";
 import { captionAdapters } from "./lib/adapters";
 import { installDomCaptions } from "./lib/dom-captions";
 import { installTextTracks } from "./lib/text-tracks";
+import { createMediaScopes } from "./lib/media-scopes";
 import type {
   DomCaptionAdapter,
   SubtitleCue,
@@ -25,6 +26,7 @@ export interface SubtitleExportOptions {
   format?: "srt" | "vtt";
   mode?: Settings["mode"];
   includeLoaded?: boolean;
+  media?: HTMLMediaElement;
 }
 const textEscape = (value: string) =>
   value
@@ -37,6 +39,70 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
   let generation = 0;
   let disposed = false;
   const history = new Map<string, SubtitleCue>();
+  const scopes = createMediaScopes(options.document);
+  let contextTarget:
+    { media: HTMLMediaElement; scope: string; url: string } | undefined;
+  const captureContext = (event: Event) => {
+    contextTarget = undefined;
+    if (!event.isTrusted) return;
+    const media = event
+      .composedPath()
+      .find(
+        (node) =>
+          node instanceof options.document.defaultView!.HTMLMediaElement,
+      ) as HTMLMediaElement | undefined;
+    if (media)
+      contextTarget = {
+        media,
+        scope: scopes.mediaScope(media),
+        url: options.document.location.href,
+      };
+  };
+  options.document.addEventListener("contextmenu", captureContext, true);
+  function selectMedia(
+    explicit?: HTMLMediaElement,
+  ): HTMLMediaElement | undefined {
+    const captured = contextTarget;
+    contextTarget = undefined;
+    if (explicit) {
+      if (!explicit.isConnected || explicit.ownerDocument !== options.document)
+        throw new Error(copy.subtitleNoCues);
+      return explicit;
+    }
+    if (
+      captured &&
+      captured.media.isConnected &&
+      captured.url === options.document.location.href &&
+      scopes.mediaScope(captured.media) === captured.scope
+    )
+      return captured.media;
+    const media =
+      options.document.querySelectorAll<HTMLMediaElement>("video,audio");
+    if (
+      adapters.some((adapter) => adapter.meeting) &&
+      records().some((cue) => cue.scope.startsWith("meeting-"))
+    )
+      return undefined;
+    if (media.length > 1) throw new Error(copy.subtitleSelectVideo);
+    return media[0];
+  }
+  function records(scope?: string) {
+    for (const [id, cue] of history)
+      if (!scopes.active(cue.scope)) history.delete(id);
+    return [...history.values()].filter((cue) => !scope || cue.scope === scope);
+  }
+  function selectedScope(media?: HTMLMediaElement) {
+    if (media) return scopes.mediaScope(media);
+    const meetings = [
+      ...new Set(
+        records()
+          .filter((cue) => cue.scope.startsWith("meeting-"))
+          .map((cue) => cue.scope),
+      ),
+    ];
+    if (meetings.length > 1) throw new Error(copy.subtitleSelectVideo);
+    return meetings[0];
+  }
   const requests = new Map<string, Promise<string>>();
   const origin = performance.now();
   const languageKey = () => {
@@ -77,12 +143,16 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     getSettings: options.getSettings,
     revision: () => generation,
     request,
+    scope: scopes.scope,
+    active: scopes.active,
     record: (cue) => {
+      if (!scopes.active(cue.scope)) return;
       if (cue.timing === "observed" && !history.has(cue.id)) {
         const previous = [...history.values()]
           .reverse()
           .find(
             (item) =>
+              item.scope === cue.scope &&
               item.timing === "observed" &&
               item.adapter === cue.adapter &&
               item.source === cue.source &&
@@ -118,14 +188,21 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
   const tracks = installTextTracks(runtime);
   const dom = installDomCaptions(runtime, adapters, options.debounceMs);
   async function pretranslate(
-    options: { all?: boolean; aheadSeconds?: number } = {},
+    options: {
+      all?: boolean;
+      aheadSeconds?: number;
+      media?: HTMLMediaElement;
+    } = {},
   ) {
     if (disposed || !runtime.getSettings().subtitlesEnabled) return;
     const revision = generation;
-    await tracks.pretranslate(options);
-    await dom.pretranslate();
+    const media = selectMedia(options.media);
+    const scope = selectedScope(media);
+    if (!scope?.startsWith("meeting-"))
+      await tracks.pretranslate({ ...options, media });
+    await dom.pretranslate(scope);
     if (options.all)
-      for (const cue of history.values()) {
+      for (const cue of records(scope)) {
         if (disposed || revision !== generation) return;
         const value = await request(cue.source);
         if (disposed || revision !== generation) return;
@@ -134,21 +211,24 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
   }
   return {
     pretranslate,
-    getTranscript: () =>
-      [...history.values()]
+    getTranscript: (media?: HTMLMediaElement) =>
+      records(media ? scopes.mediaScope(media) : undefined)
         .map((cue) => ({ ...cue }))
         .sort((a, b) => a.start - b.start),
     async exportSubtitles({
       format = "vtt",
       mode,
       includeLoaded = true,
+      media: requestedMedia,
     }: SubtitleExportOptions = {}): Promise<{ blob: Blob; name: string }> {
       const revision = generation;
-      await pretranslate({ all: includeLoaded });
+      const media = selectMedia(requestedMedia);
+      const scope = selectedScope(media);
+      await pretranslate({ all: includeLoaded, media });
       if (disposed || revision !== generation)
         throw new DOMException("", "AbortError");
-      const records = [...history.values()].sort((a, b) => a.start - b.start);
-      if (!records.length) throw new Error(copy.subtitleNoCues);
+      const selected = records(scope).sort((a, b) => a.start - b.start);
+      if (!selected.length) throw new Error(copy.subtitleNoCues);
       const timestamp = (time: number) => {
         const milliseconds = Math.max(0, Math.round(time * 1000));
         const hours = Math.floor(milliseconds / 3600000)
@@ -163,13 +243,13 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
         return `${hours}:${minutes}:${seconds}${format === "srt" ? "," : "."}${(milliseconds % 1000).toString().padStart(3, "0")}`;
       };
       const bilingual = (mode ?? options.getSettings().mode) === "bilingual";
-      const cues = records
+      const cues = selected
         .map(
           (cue, index) =>
             `${index + 1}\n${timestamp(cue.start)} --> ${timestamp(Math.max(cue.start + 0.001, cue.end))}\n${textEscape((cue.speaker ? `${cue.speaker}: ` : "") + (bilingual || !cue.translation ? cue.source : "") + (bilingual && cue.translation ? "\n" : "") + (cue.translation ?? ""))}`,
         )
         .join("\n\n");
-      const observed = records.some((cue) => cue.timing === "observed");
+      const observed = selected.some((cue) => cue.timing === "observed");
       return {
         blob: new Blob(
           [
@@ -194,13 +274,12 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
       const nextLanguage = languageKey();
       const changed = nextLanguage !== previousLanguage;
       previousLanguage = nextLanguage;
-      if (changed)
-        for (const cue of history.values()) cue.translation = undefined;
+      if (changed) for (const cue of records()) cue.translation = undefined;
       tracks.refresh();
       dom.refresh();
       if (changed && options.getSettings().subtitlesEnabled)
         void (async () => {
-          for (const cue of history.values()) {
+          for (const cue of records()) {
             if (disposed || revision !== generation) return;
             const translated = await request(cue.source);
             if (disposed || revision !== generation) return;
@@ -213,6 +292,8 @@ export function installVideoSubtitles(options: VideoSubtitleOptions) {
     dispose() {
       if (disposed) return;
       disposed = true;
+      contextTarget = undefined;
+      options.document.removeEventListener("contextmenu", captureContext, true);
       generation++;
       tracks.dispose();
       dom.dispose();

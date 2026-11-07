@@ -2,6 +2,7 @@ import type { Settings } from "../../../entities/settings";
 
 export interface SubtitleCue {
   id: string;
+  scope: string;
   source: string;
   translation?: string;
   speaker?: string;
@@ -23,6 +24,8 @@ export interface SubtitleRuntime {
   getSettings: () => Settings;
   revision: () => number;
   request: (source: string) => Promise<string>;
+  scope: (element: Element, adapter?: DomCaptionAdapter) => string | undefined;
+  active: (scope: string) => boolean;
   record: (cue: SubtitleCue) => void;
   onError: (error: unknown) => void;
   now: () => number;

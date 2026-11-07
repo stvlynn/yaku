@@ -1,4 +1,7 @@
-import { createPageTranslator } from "../features/page-translation";
+import {
+  createPageTranslator,
+  reliableLanguageObservation,
+} from "../features/page-translation";
 import { installContextTranslation } from "../features/context-translation";
 import { installVideoSubtitles } from "../features/video-subtitles";
 import { installFloatingControl } from "../features/floating-control";
@@ -6,7 +9,12 @@ import { installPageImages } from "../features/page-images";
 import { readSettings, onSettingsChanged } from "../features/preferences";
 import { request, isEnvelope, errorReply } from "../shared/messaging";
 import type { Translate } from "../entities/translation";
-import { resolveGlossary, type Settings } from "../entities/settings";
+import {
+  resolveGlossary,
+  resolveSourceLanguagePolicy,
+  type Settings,
+} from "../entities/settings";
+import type { TemporaryTranslation } from "../features/temporary-translation";
 
 export default defineContentScript({
   matches: ["<all_urls>"],
@@ -95,16 +103,33 @@ export default defineContentScript({
           payload: { id },
         }),
     });
-    let active = false;
+    let manualRevision = 0;
+    async function translateManually(wholePage = false) {
+      manualRevision++;
+      void page.translatePage({ wholePage }).catch(onError);
+      if (
+        window.top === window &&
+        page.isActive() &&
+        settings.temporaryDomainMinutes > 0
+      )
+        await request({
+          destination: "background",
+          action: "start-temporary-translation",
+        });
+    }
+    function restorePage() {
+      manualRevision++;
+      page.restore();
+    }
     floating = installFloatingControl({
       document,
       getSettings,
-      isTranslated: () => active,
+      isTranslated: () => page.isActive(),
       onToggle: async () => {
         await request({
           destination: "background",
           action: "translate-page-frames",
-          payload: active ? "restore-page" : "translate-page",
+          payload: page.isActive() ? "restore-page" : "translate-page",
         });
       },
       onOpenWorkspace: () => {
@@ -157,21 +182,17 @@ export default defineContentScript({
               return;
             }
             case "translate-page":
-              active = true;
-              void page.translatePage().catch(onError);
-              return;
+              await translateManually();
+              return page.isActive();
             case "translate-whole-page":
-              active = true;
-              void page.translatePage({ wholePage: true }).catch(onError);
-              return;
+              await translateManually(true);
+              return page.isActive();
             case "restore-page":
-              active = false;
-              page.restore();
+              restorePage();
               return;
             case "toggle-page":
-              if (active) page.restore();
-              else void page.translatePage().catch(onError);
-              active = !active;
+              if (page.isActive()) restorePage();
+              else await translateManually();
               return;
             case "translate-selection":
               await context.translateSelection();
@@ -180,7 +201,7 @@ export default defineContentScript({
               await context.translateInput();
               return;
             case "page-state":
-              return active;
+              return page.isActive();
             default:
               throw new Error("Unknown page request.");
           }
@@ -200,14 +221,42 @@ export default defineContentScript({
         location.hostname === item.hostname ||
         location.hostname.endsWith(`.${item.hostname}`),
     );
-    if (
-      rule?.action === "always" ||
-      (settings.autoTranslate && rule?.action !== "never")
-    ) {
-      active = true;
-      void page.translatePage().catch(onError);
-    }
+    const revision = manualRevision;
+    void (async () => {
+      if (rule?.action === "never") return;
+      let observation: Parameters<typeof resolveSourceLanguagePolicy>[1] = {
+        language: settings.sourceLanguage,
+        reliable: settings.sourceLanguage !== "auto",
+      };
+      if (
+        settings.sourceLanguage === "auto" &&
+        (settings.alwaysSourceLanguages.length ||
+          settings.neverSourceLanguages.length)
+      ) {
+        const detection = await chrome.i18n.detectLanguage(
+          document.body.innerText,
+        );
+        observation = reliableLanguageObservation(detection);
+      }
+      const policy = resolveSourceLanguagePolicy(settings, observation);
+      if (policy === "never") return;
+      const temporary = await request<TemporaryTranslation | null>({
+        destination: "background",
+        action: "temporary-translation-state",
+      });
+      if (revision !== manualRevision) return;
+      if (
+        rule?.action === "always" ||
+        policy === "always" ||
+        temporary ||
+        settings.autoTranslate
+      ) {
+        void page.translatePage().catch(onError);
+        floating?.refresh();
+      }
+    })().catch(onError);
     ctx.onInvalidated(() => {
+      manualRevision++;
       remove();
       context.dispose();
       page.dispose();

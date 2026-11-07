@@ -1,4 +1,17 @@
 export const copy = {
+  subtitleSelectVideo: "Choose a video before exporting captions.",
+  alwaysSourceLanguages: "Always translate",
+  neverSourceLanguages: "Never translate",
+  alwaysSourceHelp:
+    "Automatically translate these languages unless a website rule blocks them.",
+  neverSourceHelp: "Skip reliably identified paragraphs in these languages.",
+  addLanguage: "Add language",
+  removeLanguage: "Remove language",
+  temporaryDomainDuration: "Temporary website translation",
+  temporaryDomainHelp:
+    "After a manual page translation, automatically translate this website for the selected time.",
+  temporaryDisabled: "Disabled",
+  stopTemporaryTranslation: "Stop",
   colorPreset: "preset",
   saveTerm: "Save term",
   editTerm: "Edit term",
@@ -348,6 +361,13 @@ export const copy = {
     bo: "Tibetan",
   } as Record<string, string>,
 } as const;
+
+export function temporaryTranslationUntil(time: string) {
+  return `Auto-translate until ${time}`;
+}
+export function temporaryTranslationDuration(minutes: number) {
+  return minutes === 0 ? copy.temporaryDisabled : `${minutes} minutes`;
+}
 
 export function imageBatchProgress(
   completed: number,

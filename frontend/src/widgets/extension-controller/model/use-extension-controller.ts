@@ -24,6 +24,7 @@ import {
 import { copy } from "../../../shared/i18n";
 import { ocrLanguageFor } from "../../../entities/translation";
 import { request } from "../../../shared/messaging";
+import type { TemporaryTranslation } from "../../../features/temporary-translation";
 
 export type Surface =
   "popup" | "options" | "workspace" | "sidepanel" | "welcome";
@@ -50,6 +51,8 @@ export function useExtensionController(surface: Surface) {
   }>();
   const [copied, setCopied] = useState(false);
   const [translated, setTranslated] = useState(false);
+  const [temporaryTranslation, setTemporaryTranslation] =
+    useState<TemporaryTranslation | null>(null);
   const [fileBusy, setFileBusy] = useState(false);
   const [fileProgress, setFileProgress] = useState<{
     completed: number;
@@ -69,6 +72,15 @@ export function useExtensionController(surface: Surface) {
   const glossary = resolveGlossary(preferences, {
     targetLanguage: preferences.targetLanguage,
   });
+  async function refreshTemporaryTranslation(tabId: number) {
+    setTemporaryTranslation(
+      await request<TemporaryTranslation | null>({
+        destination: "background",
+        action: "temporary-translation-state",
+        payload: { tabId },
+      }),
+    );
+  }
   useEffect(() => () => fileController?.abort(), [fileController]);
   const translationSettings = JSON.stringify([
     preferences.sourceLanguage,
@@ -103,9 +115,41 @@ export function useExtensionController(surface: Surface) {
           { frameId: 0 },
         );
         if (reply?.ok) setTranslated(Boolean(reply.value));
+        await refreshTemporaryTranslation(tab.id);
       })
       .catch(() => setError(copy.pageUnavailable));
   }, [surface]);
+  useEffect(() => {
+    if (surface !== "popup") return;
+    const changed = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (
+        area !== "local" ||
+        !Object.keys(changes).some((key) =>
+          key.startsWith("temporaryTranslation:"),
+        )
+      )
+        return;
+      void chrome.tabs
+        .query({ active: true, currentWindow: true })
+        .then(async ([tab]) => {
+          if (tab?.id !== undefined) await refreshTemporaryTranslation(tab.id);
+        })
+        .catch((failure) => setError(describeError(failure)));
+    };
+    chrome.storage.onChanged.addListener(changed);
+    return () => chrome.storage.onChanged.removeListener(changed);
+  }, [surface]);
+  useEffect(() => {
+    if (!temporaryTranslation) return;
+    const timer = setTimeout(
+      () => setTemporaryTranslation(null),
+      Math.max(0, temporaryTranslation.expiresAt - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [temporaryTranslation]);
   useEffect(() => {
     document.documentElement.dataset.theme = preferences.theme;
   }, [preferences.theme]);
@@ -153,7 +197,34 @@ export function useExtensionController(surface: Surface) {
         action,
       });
       if (!reply?.ok) throw new Error(reply?.error ?? copy.pageUnavailable);
-      setTranslated(action === "translate-page");
+      const state = await chrome.tabs.sendMessage(
+        tab.id,
+        {
+          destination: "content",
+          action: "page-state",
+        },
+        { frameId: 0 },
+      );
+      if (!state?.ok) throw new Error(state?.error ?? copy.pageUnavailable);
+      setTranslated(Boolean(state.value));
+      await refreshTemporaryTranslation(tab.id);
+    } catch (failure) {
+      setError(describeError(failure));
+    }
+  }
+  async function stopTemporaryTranslation() {
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      if (tab?.id === undefined) throw new Error(copy.noActivePage);
+      await request({
+        destination: "background",
+        action: "stop-temporary-translation",
+        payload: { tabId: tab.id },
+      });
+      setTemporaryTranslation(null);
     } catch (failure) {
       setError(describeError(failure));
     }
@@ -283,6 +354,8 @@ export function useExtensionController(surface: Surface) {
     popup: {
       ...props,
       pageTranslated: translated,
+      temporaryTranslationUntil: temporaryTranslation?.expiresAt,
+      onStopTemporaryTranslation: () => void stopTemporaryTranslation(),
       onTranslatePage: () => void pageAction("translate-page"),
       onRestorePage: () => void pageAction("restore-page"),
       onOpenWorkspace: openWorkspace,

@@ -14,6 +14,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
+import { verifyBackgroundSource } from "../../scripts/experiments/background-identity.mjs";
 
 let context: BrowserContext;
 let extensionId: string;
@@ -28,7 +29,7 @@ test.beforeAll(async () => {
     channel: "chrome",
     headless: true,
     ignoreDefaultArgs: ["--disable-extensions"],
-    args: ["--enable-unsafe-extension-debugging"],
+    args: ["--enable-unsafe-extension-debugging", "--remote-debugging-port=0"],
     viewport: { width: 1180, height: 860 },
     acceptDownloads: true,
   });
@@ -40,6 +41,18 @@ test.beforeAll(async () => {
     path: path.resolve(".output/chrome-mv3"),
   });
   extensionId = result.id;
+  const bridge = await context.newPage();
+  await bridge.goto(`chrome-extension://${extensionId}/options.html`);
+  const identity = await verifyBackgroundSource(
+    profile,
+    extensionId,
+    path.resolve(".output/chrome-mv3/background.js"),
+  );
+  await writeFile(
+    path.join(screenshotDir, "ui-background-identity.json"),
+    JSON.stringify(identity, null, 2),
+  );
+  await bridge.close();
 });
 
 test.afterAll(async () => {
@@ -372,6 +385,75 @@ test("popup and workspace remain usable with keyboard, narrow layouts and reduce
   await workspace.close();
 });
 
+test("popup Restore remains actionable in controlled busy states while new Translate stays disabled", async () => {
+  const settings = await open("options");
+  const previous = await settings.evaluate(
+    async () => (await chrome.storage.session.get("modelStatus")).modelStatus,
+  );
+  const fixtureTabId = await settings.evaluate(async () => {
+    const tab = await chrome.tabs.getCurrent();
+    if (tab?.id === undefined)
+      throw new Error("The fixture tab has no browser tab identity.");
+    return tab.id;
+  });
+  const popup = await context.newPage();
+  await popup.addInitScript((tabId) => {
+    const actions: string[] = [];
+    let translated = true;
+    Object.defineProperty(globalThis, "uiFixtureActions", { value: actions });
+    Object.defineProperty(chrome.tabs, "query", {
+      value: async () => [{ id: tabId }],
+    });
+    Object.defineProperty(chrome.tabs, "sendMessage", {
+      value: async (_id: number, message: { action: string }) => {
+        if (message.action === "page-state")
+          return { ok: true, value: translated };
+        actions.push(message.action);
+        if (message.action === "restore-page") translated = false;
+        return { ok: true, value: undefined };
+      },
+    });
+  }, fixtureTabId);
+  try {
+    await settings.evaluate(() =>
+      chrome.storage.session.set({ modelStatus: { phase: "translating" } }),
+    );
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await popup.bringToFront();
+    const restore = popup.getByRole("button", {
+      name: "Show original",
+      exact: true,
+    });
+    for (const phase of ["downloading", "loading", "translating"]) {
+      await popup.evaluate(
+        (value) =>
+          chrome.storage.session.set({ modelStatus: { phase: value } }),
+        phase,
+      );
+      await expect(restore).toBeEnabled();
+    }
+    await restore.click();
+    expect(
+      await popup.evaluate(
+        () =>
+          (globalThis as unknown as { uiFixtureActions: string[] })
+            .uiFixtureActions,
+      ),
+    ).toEqual(["restore-page"]);
+    await expect(
+      popup.getByRole("button", { name: "Translate this page", exact: true }),
+    ).toBeDisabled();
+  } finally {
+    await settings.evaluate(async (value) => {
+      if (value === undefined)
+        await chrome.storage.session.remove("modelStatus");
+      else await chrome.storage.session.set({ modelStatus: value });
+    }, previous);
+    await popup.close();
+    await settings.close();
+  }
+});
+
 test("TXT and SRT translate and export through the real cached local model", async () => {
   test.skip(
     !process.env.YAKU_MODEL_PROFILE,
@@ -576,6 +658,9 @@ test("browser sync round-trips chunked Unicode preferences and applies real stor
     translationPosition: "before",
     fontFamily: "serif",
     textColor: "#244466",
+    alwaysSourceLanguages: ["en"],
+    neverSourceLanguages: ["ja"],
+    temporaryDomainMinutes: 15,
     glossaries: [
       {
         id: "sync-library",
@@ -630,6 +715,9 @@ test("browser sync round-trips chunked Unicode preferences and applies real stor
     translationPosition: "before",
     fontFamily: "serif",
     textColor: "#244466",
+    alwaysSourceLanguages: ["en"],
+    neverSourceLanguages: ["ja"],
+    temporaryDomainMinutes: 15,
     glossaries: large.glossaries,
   });
   expect(synced).not.toHaveProperty("syncPreferences");
@@ -995,6 +1083,131 @@ test("named glossaries retain independent term editors, CSV data and URL/languag
   await page.close();
 });
 
+test("source-language rules and temporary website duration persist, export and reset", async () => {
+  const page = await open("options");
+  await choose(page, "Always translate", "English");
+  await page
+    .getByRole("button", {
+      name: "Add language: Always translate",
+      exact: true,
+    })
+    .click();
+  await choose(page, "Never translate", "English");
+  await page
+    .getByRole("button", { name: "Add language: Never translate", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Never translate", exact: true })
+    .click();
+  await expect(
+    page.getByRole("option", { name: "Traditional Chinese", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("option", { name: "Chinese", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Add language: Never translate", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          ((await chrome.storage.local.get("settings")).settings as Settings)
+            .neverSourceLanguages,
+      ),
+    )
+    .toEqual(["en", "zh"]);
+  await page.reload();
+  await expect(
+    page.getByRole("button", {
+      name: "Remove language: English · Always translate",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("combobox", { name: "Never translate", exact: true })
+    .scrollIntoViewIfNeeded();
+  expect(
+    await page
+      .locator(".settings-main")
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await page.screenshot({
+    path: path.join(screenshotDir, "language-policy-narrow.png"),
+  });
+  await page.setViewportSize({ width: 1180, height: 860 });
+  await page
+    .getByRole("button", { name: "Website rules", exact: true })
+    .click();
+  await choose(page, "Temporary website translation", "15 minutes");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          ((await chrome.storage.local.get("settings")).settings as Settings)
+            .temporaryDomainMinutes,
+      ),
+    )
+    .toBe(15);
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Website rules", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", {
+      name: "Temporary website translation",
+      exact: true,
+    }),
+  ).toHaveText("15 minutes");
+  await page.screenshot({
+    path: path.join(screenshotDir, "temporary-domain-settings.png"),
+  });
+  await page.getByRole("button", { name: "General", exact: true }).click();
+  const pending = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export settings", exact: true })
+    .click();
+  const download = await pending;
+  const exported = JSON.parse(
+    await readFile((await download.path())!, "utf8"),
+  ) as Settings;
+  expect(exported).toMatchObject({
+    alwaysSourceLanguages: ["en"],
+    neverSourceLanguages: ["en", "zh"],
+    temporaryDomainMinutes: 15,
+  });
+  await page
+    .getByRole("button", {
+      name: "Remove language: English · Always translate",
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          ((await chrome.storage.local.get("settings")).settings as Settings)
+            .alwaysSourceLanguages,
+      ),
+    )
+    .toEqual([]);
+  await page
+    .getByRole("button", { name: "Reset settings", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          (await chrome.storage.local.get("settings")).settings as Settings,
+      ),
+    )
+    .toMatchObject({
+      alwaysSourceLanguages: [],
+      neverSourceLanguages: [],
+      temporaryDomainMinutes: 0,
+    });
+  await page.close();
+});
+
 test("writing styles and selected-text explanation use the real local model", async () => {
   test.skip(
     !process.env.YAKU_MODEL_PROFILE,
@@ -1147,7 +1360,4 @@ test("password-protected PDF rejects wrong passwords and exports a real translat
   expect(persisted).not.toContain("yaku-test-only");
   await page.screenshot({
     path: path.join(screenshotDir, "password-pdf-real-model.png"),
-    fullPage: true,
-  });
-  await page.close();
-});
+    fullPage: tr

@@ -2,6 +2,7 @@ import { chromium } from "@playwright/test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyBackgroundSource } from "./background-identity.mjs";
 
 export const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -34,7 +35,7 @@ export async function launchExtension(surface = "options") {
     channel: process.env.YAKU_BROWSER_CHANNEL ?? "chrome",
     headless: process.env.YAKU_HEADLESS !== "false",
     ignoreDefaultArgs: ["--disable-extensions"],
-    args: ["--enable-unsafe-extension-debugging"],
+    args: ["--enable-unsafe-extension-debugging", "--remote-debugging-port=0"],
   });
   try {
     const cdp = await context.browser().newBrowserCDPSession();
@@ -44,6 +45,21 @@ export async function launchExtension(surface = "options") {
     let page = await context.newPage();
     page.setDefaultTimeout(900000);
     await page.goto(`chrome-extension://${id}/${surface}.html`);
+    await page.evaluate(() =>
+      chrome.runtime.sendMessage({
+        destination: "background",
+        action: "cache-info",
+      }),
+    );
+    const backgroundIdentity = await verifyBackgroundSource(
+      profileDirectory,
+      id,
+      resolve(extensionDirectory, "background.js"),
+    );
+    console.log(
+      "Executed background identity:",
+      JSON.stringify(backgroundIdentity),
+    );
     const send = async (action, payload) => {
       const reply = await page.evaluate(
         ({ action, payload }) =>

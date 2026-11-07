@@ -51,6 +51,71 @@ afterEach(() => {
 });
 
 describe("page translation", () => {
+  it("reports the controller's accepted activation synchronously and rejects unavailable scopes", async () => {
+    const { controller, settings } = setup("<main><p>Hello.</p></main>");
+    expect(controller.isActive()).toBe(false);
+    const accepted = controller.translatePage();
+    expect(controller.isActive()).toBe(true);
+    await accepted;
+    controller.restore();
+    expect(controller.isActive()).toBe(false);
+    settings.siteRules = [
+      { hostname: location.hostname, action: "always", selector: ".missing" },
+    ];
+    await controller.translatePage();
+    expect(controller.isActive()).toBe(false);
+    settings.siteRules = [{ hostname: location.hostname, action: "never" }];
+    await controller.translatePage();
+    expect(controller.isActive()).toBe(false);
+  });
+
+  it("excludes reliable source paragraphs, keeps mixed text, and re-evaluates policy changes", async () => {
+    const detector = vi.fn(async (text: string) => ({
+      isReliable: true,
+      languages: text.startsWith("English")
+        ? [{ language: "en", percentage: 100 }]
+        : [
+            { language: "en", percentage: 60 },
+            { language: "fr", percentage: 40 },
+          ],
+    }));
+    const { controller, settings, run } = setup(
+      "<main><p>English paragraph.</p><p>Mixed paragraph.</p></main>",
+      undefined,
+      detector,
+    );
+    settings.neverSourceLanguages = ["en"];
+    settings.alwaysSourceLanguages = ["en"];
+    await controller.translatePage();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].text).toBe("Mixed paragraph.");
+    settings.neverSourceLanguages = [];
+    controller.setMode();
+    await settle();
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(
+      document.querySelectorAll('[data-yaku-owned="translation"]'),
+    ).toHaveLength(2);
+  });
+
+  it("applies a declared source exclusion without running automatic detection", async () => {
+    const detector = vi.fn(async () => ({ isReliable: false, languages: [] }));
+    const { controller, settings, run } = setup(
+      "<p>Declared French source.</p>",
+      undefined,
+      detector,
+    );
+    settings.sourceLanguage = "fr";
+    settings.neverSourceLanguages = ["fr"];
+    await controller.translatePage();
+    expect(detector).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    settings.neverSourceLanguages = [];
+    controller.setMode();
+    await settle();
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("preserves inline links, original node identity and nested paragraph ownership", async () => {
     const { controller, run } = setup(
       '<main><div><p>Read <a href="/guide"><strong>the guide</strong></a> today.</p><p>Another paragraph</p></div></main>',

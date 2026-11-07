@@ -21,6 +21,9 @@ export interface Settings {
   style: "plain" | "underline" | "highlight" | "quote" | "blur";
   theme: "system" | "light" | "dark";
   autoTranslate: boolean;
+  alwaysSourceLanguages: string[];
+  neverSourceLanguages: string[];
+  temporaryDomainMinutes: number;
   selectionEnabled: boolean;
   hoverEnabled: boolean;
   inputEnabled: boolean;
@@ -45,6 +48,9 @@ export const defaultSettings: Settings = {
   style: "plain",
   theme: "system",
   autoTranslate: false,
+  alwaysSourceLanguages: [],
+  neverSourceLanguages: [],
+  temporaryDomainMinutes: 0,
   selectionEnabled: true,
   hoverEnabled: false,
   inputEnabled: true,
@@ -63,7 +69,14 @@ export const defaultSettings: Settings = {
   glossaries: [],
 };
 export function createDefaultSettings(): Settings {
-  return { ...defaultSettings, siteRules: [], glossary: {}, glossaries: [] };
+  return {
+    ...defaultSettings,
+    alwaysSourceLanguages: [],
+    neverSourceLanguages: [],
+    siteRules: [],
+    glossary: {},
+    glossaries: [],
+  };
 }
 export function validReadingColor(value: unknown): value is string {
   return (
@@ -75,3 +88,10 @@ export {
   validGlossaryUrlPattern,
   type GlossaryContext,
 } from "./glossary";
+export {
+  resolveSourceLanguagePolicy,
+  validSourceLanguage,
+  temporaryDomainDurations,
+  type SourceLanguageObservation,
+  type SourceLanguagePolicy,
+} from "./language-policy";

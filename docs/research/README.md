@@ -7,6 +7,7 @@ Implementation starts from shipped behavior, primary documentation, and reproduc
 - [Model runtime](model-runtime.md): model compatibility and experiments.
 - [Page and context audit](page-context-audit.md): editor safety, React ownership, protected content, language detection, and browser acceptance boundaries.
 - [Design system](design-system.md): design sources and user journeys.
+- [Translation policy](translation-policy.md): source-language rules, temporary-domain precedence and implementation contract.
 - [Evidence ledger](evidence-ledger.md): REA identities and coverage.
 
 Static observations are not runtime acceptance. Outstanding scenarios stay open until exercised in a browser with the actual translation runtime.

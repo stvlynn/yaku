@@ -64,7 +64,7 @@ describe("appearance and settings migration", () => {
       textColor: "#123AbC",
     });
   });
-  it("writes complete v2 snapshots and migrates v1 without discarding local v2-only settings", () => {
+  it("writes complete current snapshots and migrates v1 without discarding local appearance", () => {
     const current = {
       ...createDefaultSettings(),
       syncPreferences: true,
@@ -81,7 +81,7 @@ describe("appearance and settings migration", () => {
       ],
     };
     const v2 = encodeSyncedSettings(current, "new");
-    expect((v2[syncManifestKey] as { version: number }).version).toBe(2);
+    expect((v2[syncManifestKey] as { version: number }).version).toBe(3);
     expect(decodeSyncedSettings(v2)?.settings.glossaries).toEqual(
       current.glossaries,
     );

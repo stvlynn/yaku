@@ -127,6 +127,9 @@ describe("browser preference sync", () => {
           ...defaultSettings,
           syncPreferences: true,
           targetLanguage: "ja",
+          alwaysSourceLanguages: ["en"],
+          neverSourceLanguages: ["zh"],
+          temporaryDomainMinutes: 15,
         },
       });
       await ca.flush();
@@ -138,6 +141,11 @@ describe("browser preference sync", () => {
       await expect
         .poll(() => (b.local.settings as Settings).targetLanguage)
         .toBe("ja");
+      expect(b.local.settings).toMatchObject({
+        alwaysSourceLanguages: ["en"],
+        neverSourceLanguages: ["zh"],
+        temporaryDomainMinutes: 15,
+      });
       expect(bus.writes).toBe(1);
       await a.storage.local.set({
         settings: { ...(a.local.settings as Settings), targetLanguage: "fr" },

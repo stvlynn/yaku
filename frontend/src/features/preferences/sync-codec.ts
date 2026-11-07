@@ -22,10 +22,20 @@ export const legacySettingsKeys = [
   "siteRules",
   "glossary",
 ] as const;
+export const version2SettingsKeys = [
+  ...legacySettingsKeys,
+  "translationPosition",
+  "fontFamily",
+  "fontWeight",
+  "lineHeight",
+  "textColor",
+  "backgroundColor",
+  "glossaries",
+] as const;
 export interface SyncedSettingsSnapshot {
   settings: Settings;
   revision: string;
-  version: 1 | 2;
+  version: 1 | 2 | 3;
 }
 export function settingsPayload(settings: Settings): string {
   const { syncPreferences: _enabled, ...preferences } =
@@ -43,7 +53,7 @@ export function encodeSyncedSettings(
   const count = Math.ceil(encoded.length / chunkSize);
   if (count > 14) throw new Error(copy.syncQuota);
   const result: Record<string, unknown> = {
-    [syncManifestKey]: { version: 2, revision, count },
+    [syncManifestKey]: { version: 3, revision, count },
   };
   for (let index = 0; index < count; index++)
     result[`${syncPrefix}chunk.${index}`] = {
@@ -62,7 +72,9 @@ export function decodeSyncedSettings(
   if (manifest === undefined) return undefined;
   if (
     !record(manifest) ||
-    (manifest.version !== 1 && manifest.version !== 2) ||
+    (manifest.version !== 1 &&
+      manifest.version !== 2 &&
+      manifest.version !== 3) ||
     typeof manifest.revision !== "string" ||
     !Number.isInteger(manifest.count) ||
     Number(manifest.count) < 1 ||
@@ -88,25 +100,30 @@ export function decodeSyncedSettings(
     const value: unknown = JSON.parse(
       new TextDecoder("utf-8", { fatal: true }).decode(bytes),
     );
+    const keys =
+      manifest.version === 1
+        ? legacySettingsKeys
+        : manifest.version === 2
+          ? version2SettingsKeys
+          : Object.keys(defaultSettings);
     if (
       !record(value) ||
-      (manifest.version === 1
-        ? legacySettingsKeys
-        : Object.keys(defaultSettings)
-      ).some((key) => key !== "syncPreferences" && !Object.hasOwn(value, key))
+      keys.some(
+        (key) => key !== "syncPreferences" && !Object.hasOwn(value, key),
+      )
     )
       throw new Error(copy.syncInvalid);
     return {
       settings: validateSettings({
-        ...(manifest.version === 1
-          ? Object.fromEntries(
-              legacySettingsKeys.map((key) => [key, value[key]]),
-            )
-          : value),
+        ...Object.fromEntries(
+          keys
+            .filter((key) => key !== "syncPreferences")
+            .map((key) => [key, value[key]]),
+        ),
         syncPreferences: true,
       }),
       revision: manifest.revision,
-      version: manifest.version as 1 | 2,
+      version: manifest.version as 1 | 2 | 3,
     };
   } catch {
     throw new Error(copy.syncInvalid);
@@ -116,11 +133,14 @@ export function mergeSyncedSettings(
   snapshot: SyncedSettingsSnapshot,
   local: Settings,
 ): Settings {
-  return snapshot.version === 1
+  return snapshot.version !== 3
     ? validateSettings({
         ...local,
         ...Object.fromEntries(
-          legacySettingsKeys.map((key) => [key, snapshot.settings[key]]),
+          (snapshot.version === 1
+            ? legacySettingsKeys
+            : version2SettingsKeys
+          ).map((key) => [key, snapshot.settings[key]]),
         ),
         syncPreferences: local.syncPreferences,
       })

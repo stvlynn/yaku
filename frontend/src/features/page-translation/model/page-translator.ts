@@ -1,6 +1,9 @@
-import type { Settings } from "../../../entities/settings";
+import {
+  resolveSourceLanguagePolicy,
+  type Settings,
+} from "../../../entities/settings";
 import type { Translate, TranslationMode } from "../../../entities/translation";
-import { alreadyTargetLanguage } from "./language";
+import { alreadyTargetLanguage, reliableLanguageObservation } from "./language";
 import { createInlineCodec } from "../../../shared/translation-markup";
 import {
   collectOpenRoots,
@@ -117,6 +120,8 @@ export function createPageTranslator({
       settings.sourceLanguage,
       settings.glossary,
       settings.siteRules,
+      settings.alwaysSourceLanguages,
+      settings.neverSourceLanguages,
     ]);
   };
   const lifecycle = new AbortController();
@@ -333,6 +338,16 @@ export function createPageTranslator({
     const version = entry.version;
     const settings = getSettings();
     try {
+      if (
+        settings.sourceLanguage !== "auto" &&
+        resolveSourceLanguagePolicy(settings, {
+          language: settings.sourceLanguage,
+          reliable: true,
+        }) === "never"
+      ) {
+        entry.skipped = true;
+        return;
+      }
       if (detectLanguage && settings.sourceLanguage === "auto") {
         const detection = await detectLanguage(entry.values.join(""));
         if (
@@ -343,6 +358,10 @@ export function createPageTranslator({
         )
           return;
         if (
+          resolveSourceLanguagePolicy(
+            settings,
+            reliableLanguageObservation(detection),
+          ) === "never" ||
           alreadyTargetLanguage(
             settings.sourceLanguage,
             settings.targetLanguage,
@@ -556,6 +575,7 @@ export function createPageTranslator({
   }
 
   const controller = {
+    isActive: () => active,
     async translatePage({
       wholePage = false,
     }: { wholePage?: boolean } = {}): Promise<void> {

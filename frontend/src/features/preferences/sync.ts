@@ -131,7 +131,7 @@ export function installPreferencesSync(
     lastRevision = remote.revision;
     pendingUpload = false;
     await status({ phase: "ready" });
-    if (remote.version === 1) scheduleUpload();
+    if (remote.version !== 3) scheduleUpload();
   }
   const handle: ChangeListener = (changes, area) => {
     if (disposed) return;

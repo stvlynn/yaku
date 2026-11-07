@@ -29,6 +29,8 @@ Features receive translation functions rather than importing sibling workflows. 
 
 Settings use `chrome.storage.local`; an optional background sync controller chunks settings into `chrome.storage.sync` within Chrome's item and total quotas. Model files and translated content are not synced. Current model status uses `chrome.storage.session`. Large model files use OPFS under the extension origin. `unlimitedStorage` supports the large local model; it does not replace actual allocation/error checks. Model readiness depends on successfully committed expected files and a usable session, not a superficial download progress event.
 
+Source-language rule precedence is a pure settings-entity policy. Content orchestration uses the page feature's conservative language observation helper for automatic startup; the renderer applies paragraph exclusions with the same policy. Temporary website activation is a separate feature with serialized local-storage writes and exact-hostname, fixed-expiry records. Only accepted manual translation in the top frame creates a record. The popup can stop future automatic activation without removing an already displayed translation. These records are not part of settings export or synchronization; only their configured duration is.
+
 All-host access enables user-requested page, input and subtitle translation. Browser-protected pages remain unavailable. Local files require the user's Chrome extension file-access setting. Content and document output are treated as data. Generated translations are inserted as text, not executable HTML.
 
 ## Runtime assets

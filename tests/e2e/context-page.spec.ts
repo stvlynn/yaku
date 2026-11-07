@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Settings } from "../../frontend/src/entities/settings";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { verifyBackgroundSource } from "../../scripts/experiments/background-identity.mjs";
 
 async function sendFixture(
   bridge: Page,
@@ -83,7 +84,10 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       channel: "chrome",
       headless: true,
       ignoreDefaultArgs: ["--disable-extensions"],
-      args: ["--enable-unsafe-extension-debugging"],
+      args: [
+        "--enable-unsafe-extension-debugging",
+        "--remote-debugging-port=0",
+      ],
       viewport: { width: 1280, height: 900 },
     },
   );
@@ -91,6 +95,8 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
   context.setDefaultNavigationTimeout(30000);
   console.log("context-page: Chrome launched");
   let bridge: Page | undefined;
+  let fixture: Page | undefined;
+  let diagnosticTimer: ReturnType<typeof setInterval> | undefined;
   let originalSettings: Settings | undefined;
   const evidence: Record<string, unknown> = new Proxy(
     {
@@ -142,6 +148,11 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
     );
     expect(cache.ok).toBe(true);
     expect(cache.value.complete).toBe(true);
+    evidence.backgroundIdentity = await verifyBackgroundSource(
+      process.env.YAKU_MODEL_PROFILE!,
+      id,
+      path.resolve(".output/chrome-mv3/background.js"),
+    );
     console.log("context-page: cached model confirmed");
     originalSettings = await bridge.evaluate(
       async () =>
@@ -194,6 +205,29 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       });
     });
     const page = await context.newPage();
+    fixture = page;
+    diagnosticTimer = setInterval(() => {
+      void Promise.all([
+        page.evaluate(() => ({
+          url: location.href,
+          targets: document.querySelectorAll('[data-yaku-owned="translation"]')
+            .length,
+          reading: document.querySelector("#reading")?.outerHTML,
+          floating: document
+            .querySelector("[data-yaku-floating]")
+            ?.shadowRoot?.querySelector("[role=alert]")?.textContent,
+        })),
+        bridge!.evaluate(() => chrome.storage.session.get("modelStatus")),
+      ]).then(
+        ([dom, status]) =>
+          console.log(
+            "context-page: diagnostic",
+            JSON.stringify({ dom, status }),
+          ),
+        (error) =>
+          console.log("context-page: diagnostic unavailable", String(error)),
+      );
+    }, 15000);
     console.log("context-page: opening unique fixture");
     page.on("pageerror", (error) => errors.push(String(error)));
     await page.goto(fixtureUrl);
@@ -202,105 +236,108 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       return sendFixture(bridge!, page, action, payload);
     }
     await send("restore-page");
-    console.log("context-page: starting IME composition");
-    const input = page.locator("#ime");
-    await input.fill("");
-    await input.focus();
-    await input.evaluate((element) => {
-      const trace: {
-        type: string;
-        composing?: boolean;
-        trusted: boolean;
-        inputType?: string;
-      }[] = [];
-      Object.assign(window, { imeTrace: trace });
-      for (const type of ["compositionstart", "compositionend", "input"])
-        element.addEventListener(type, (event) =>
-          trace.push({
-            type,
-            composing: (event as InputEvent).isComposing,
-            trusted: event.isTrusted,
-            inputType: (event as InputEvent).inputType,
-          }),
-        );
-    });
-    const inputCdp = await context.newCDPSession(page);
-    await inputCdp.send("Input.imeSetComposition", {
-      text: "正在输入",
-      selectionStart: 4,
-      selectionEnd: 4,
-    });
-    const composingText = await input.inputValue();
-    console.log("context-page: requesting translation during composition");
-    await send("translate-input");
-    expect(await input.inputValue()).toBe(composingText);
-    await inputCdp.send("Input.imeSetComposition", {
-      text: "",
-      selectionStart: 0,
-      selectionEnd: 0,
-    });
-    evidence.ime = await page.evaluate(
-      () => (window as unknown as { imeTrace: unknown[] }).imeTrace,
-    );
-    expect(
-      (evidence.ime as { type: string; trusted: boolean }[]).some(
-        (event) => event.type === "compositionstart" && event.trusted,
-      ),
-    ).toBe(true);
-    await input.fill("Hello friend.");
-    await send("translate-input");
-    await expect(input).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
-    evidence.inputTranslation = await input.inputValue();
-    await clickContextButton(page, "Undo translation");
-    expect(await input.inputValue()).toBe("Hello friend.");
-    await inputCdp.detach();
-    const rich = page.locator("#rich");
-    const originalRich = await rich.innerHTML();
-    await rich.focus();
-    await send("translate-input");
-    await expect(rich.locator("strong")).toContainText(/[\u3400-\u9fff]/u, {
-      timeout: 180000,
-    });
-    expect(await rich.locator("p").count()).toBe(2);
-    evidence.richTranslation = await rich.innerHTML();
-    await clickContextButton(page, "Undo translation");
-    expect(await rich.innerHTML()).toBe(originalRich);
-    await page.locator("#pick").evaluate((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      getSelection()!.removeAllRanges();
-      getSelection()!.addRange(range);
-      element.dispatchEvent(
-        new MouseEvent("mouseup", { bubbles: true, composed: true }),
+    if (!process.env.YAKU_PAGE_ONLY) {
+      console.log("context-page: starting IME composition");
+      const input = page.locator("#ime");
+      await input.fill("");
+      await input.focus();
+      await input.evaluate((element) => {
+        const trace: {
+          type: string;
+          composing?: boolean;
+          trusted: boolean;
+          inputType?: string;
+        }[] = [];
+        Object.assign(window, { imeTrace: trace });
+        for (const type of ["compositionstart", "compositionend", "input"])
+          element.addEventListener(type, (event) =>
+            trace.push({
+              type,
+              composing: (event as InputEvent).isComposing,
+              trusted: event.isTrusted,
+              inputType: (event as InputEvent).inputType,
+            }),
+          );
+      });
+      const inputCdp = await context.newCDPSession(page);
+      await inputCdp.send("Input.imeSetComposition", {
+        text: "正在输入",
+        selectionStart: 4,
+        selectionEnd: 4,
+      });
+      const composingText = await input.inputValue();
+      console.log("context-page: requesting translation during composition");
+      await send("translate-input");
+      expect(await input.inputValue()).toBe(composingText);
+      await inputCdp.send("Input.imeSetComposition", {
+        text: "",
+        selectionStart: 0,
+        selectionEnd: 0,
+      });
+      evidence.ime = await page.evaluate(
+        () => (window as unknown as { imeTrace: unknown[] }).imeTrace,
       );
-    });
-    await clickContextButton(page, "Translate selection");
-    await expect
-      .poll(() => panelText(page), { timeout: 180000 })
-      .toMatch(/[\u3400-\u9fff]/u);
-    evidence.selection = await panelText(page);
-    await page.keyboard.press("Escape");
-    await page.locator("#focus").click();
-    await page.locator("#hover").hover();
-    await page.keyboard.press("Alt");
-    await expect
-      .poll(() => panelText(page), { timeout: 180000 })
-      .toMatch(/[\u3400-\u9fff]/u);
-    evidence.hover = await panelText(page);
-    await page.keyboard.press("Alt");
-    await expect.poll(() => panelText(page)).toBe("");
-    const inactive = page.frameLocator("#inactive").locator("#frame-input");
-    const active = page.frameLocator("#active").locator("#frame-input");
-    await inactive.focus();
-    await active.focus();
-    await send("translate-input");
-    await expect(active).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
-    expect(await inactive.inputValue()).toBe("Hello friend.");
-    evidence.focusedFrameInput = await active.inputValue();
+      expect(
+        (evidence.ime as { type: string; trusted: boolean }[]).some(
+          (event) => event.type === "compositionstart" && event.trusted,
+        ),
+      ).toBe(true);
+      await input.fill("Hello friend.");
+      await send("translate-input");
+      await expect(input).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
+      evidence.inputTranslation = await input.inputValue();
+      await clickContextButton(page, "Undo translation");
+      expect(await input.inputValue()).toBe("Hello friend.");
+      await inputCdp.detach();
+      const rich = page.locator("#rich");
+      const originalRich = await rich.innerHTML();
+      await rich.focus();
+      await send("translate-input");
+      await expect(rich.locator("strong")).toContainText(/[\u3400-\u9fff]/u, {
+        timeout: 180000,
+      });
+      expect(await rich.locator("p").count()).toBe(2);
+      evidence.richTranslation = await rich.innerHTML();
+      await clickContextButton(page, "Undo translation");
+      expect(await rich.innerHTML()).toBe(originalRich);
+      await page.locator("#pick").evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(range);
+        element.dispatchEvent(
+          new MouseEvent("mouseup", { bubbles: true, composed: true }),
+        );
+      });
+      await clickContextButton(page, "Translate selection");
+      await expect
+        .poll(() => panelText(page), { timeout: 180000 })
+        .toMatch(/[\u3400-\u9fff]/u);
+      evidence.selection = await panelText(page);
+      await page.keyboard.press("Escape");
+      await page.locator("#focus").click();
+      await page.locator("#hover").hover();
+      await page.keyboard.press("Alt");
+      await expect
+        .poll(() => panelText(page), { timeout: 180000 })
+        .toMatch(/[\u3400-\u9fff]/u);
+      evidence.hover = await panelText(page);
+      await page.keyboard.press("Alt");
+      await expect.poll(() => panelText(page)).toBe("");
+      const inactive = page.frameLocator("#inactive").locator("#frame-input");
+      const active = page.frameLocator("#active").locator("#frame-input");
+      await inactive.focus();
+      await active.focus();
+      await send("translate-input");
+      await expect(active).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
+      expect(await inactive.inputValue()).toBe("Hello friend.");
+      evidence.focusedFrameInput = await active.inputValue();
+    }
     await page.locator("#focus").click();
     await page
-      .getByRole("button", { name: "Translate page", exact: true })
+      .getByRole("button", { name: "Translate this page", exact: true })
       .click();
+    console.log("context-page: floating page translation requested");
     await expect(
       page.locator('#reading [data-yaku-owned="translation"]'),
     ).toContainText(/[\u3400-\u9fff]/u, { timeout: 180000 });
@@ -426,6 +463,14 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
         '#protected-math [data-yaku-owned="translation"] math mfrac',
       ),
     ).toBeVisible({ timeout: 180000 });
+    evidence.protectedRendering = await react.evaluate(() => ({
+      code: document.querySelector(
+        '#protected-code [data-yaku-owned="translation"]',
+      )?.innerHTML,
+      math: document.querySelector(
+        '#protected-math [data-yaku-owned="translation"]',
+      )?.innerHTML,
+    }));
     await react.locator("#react-toggle").click();
     await expect
       .poll(() =>
@@ -483,6 +528,17 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
     expect(errors).toEqual([]);
     evidence.pageErrors = errors;
   } finally {
+    clearInterval(diagnosticTimer);
+    if (fixture && !fixture.isClosed()) {
+      evidence.finalFixture = await fixture.evaluate(() => ({
+        url: location.href,
+        text: document.body.innerText,
+        reading: document.querySelector("#reading")?.outerHTML,
+        floating: document
+          .querySelector("[data-yaku-floating]")
+          ?.shadowRoot?.querySelector("[role=alert]")?.textContent,
+      }));
+    }
     if (bridge && originalSettings)
       await bridge.evaluate(
         (settings) => chrome.storage.local.set({ settings }),
