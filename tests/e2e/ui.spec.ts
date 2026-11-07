@@ -49,10 +49,12 @@ test.afterAll(async () => {
 async function open(surface: string): Promise<Page> {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/${surface}.html`);
+  await page.bringToFront();
   return page;
 }
 
 async function choose(page: Page, name: string, option: string) {
+  await page.bringToFront();
   await page.getByRole("combobox", { name, exact: true }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
 }
@@ -246,6 +248,7 @@ test("settings persist across real extension surfaces and import/export round-tr
     .poll(() => shortcutsTab.url())
     .toContain("chrome://extensions/shortcuts");
   await shortcutsTab.close();
+  await page.bringToFront();
   await page.getByRole("button", { name: "General", exact: true }).click();
   await page
     .getByRole("button", { name: "Reset settings", exact: true })
@@ -846,6 +849,32 @@ test("appearance controls persist and clear explicit typography and colors", asy
     path: path.join(screenshotDir, "appearance-settings.png"),
     fullPage: true,
   });
+  await page
+    .getByRole("textbox", { name: "Background color", exact: true })
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: path.join(screenshotDir, "appearance-colors-light.png"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("textbox", { name: "Background color", exact: true })
+    .scrollIntoViewIfNeeded();
+  expect(
+    await page
+      .locator(".settings-main")
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await page.screenshot({
+    path: path.join(screenshotDir, "appearance-narrow.png"),
+  });
+  await choose(page, "Appearance", "Dark");
+  await page
+    .getByRole("textbox", { name: "Background color", exact: true })
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: path.join(screenshotDir, "appearance-colors-dark.png"),
+  });
+  await page.setViewportSize({ width: 1180, height: 860 });
   await choose(page, "Translation font", "Use page font");
   await choose(page, "Font weight", "Use page weight");
   await choose(page, "Line spacing", "Use page spacing");
@@ -926,6 +955,20 @@ test("named glossaries retain independent term editors, CSV data and URL/languag
     path: path.join(screenshotDir, "scoped-glossary.png"),
     fullPage: true,
   });
+  await page
+    .getByRole("button", { name: "Edit glossary", exact: true })
+    .click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page
+      .locator(".settings-main")
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await page.screenshot({
+    path: path.join(screenshotDir, "scoped-glossary-narrow.png"),
+  });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.setViewportSize({ width: 1180, height: 860 });
   await choose(page, "Glossary", "General glossary");
   await expect(page.getByText("全局", { exact: true })).toBeVisible();
   await expect(page.getByText("读者", { exact: true })).toHaveCount(0);

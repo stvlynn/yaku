@@ -168,6 +168,7 @@ export function GlossaryPreferences({
             <span className="field-label">{copy.glossaryUrls}</span>
             <textarea
               className="input"
+              aria-label={copy.glossaryUrls}
               value={patterns}
               onChange={(event) => setPatterns(event.target.value)}
               placeholder={copy.glossaryUrlExample}

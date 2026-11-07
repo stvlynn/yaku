@@ -76,6 +76,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
     "Requires an explicitly supplied real cached-model profile.",
   );
   test.setTimeout(600000);
+  console.log("context-page: launching Chrome");
   const context = await chromium.launchPersistentContext(
     process.env.YAKU_MODEL_PROFILE!,
     {
@@ -86,12 +87,23 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       viewport: { width: 1280, height: 900 },
     },
   );
+  context.setDefaultTimeout(20000);
+  context.setDefaultNavigationTimeout(30000);
+  console.log("context-page: Chrome launched");
   let bridge: Page | undefined;
   let originalSettings: Settings | undefined;
-  const evidence: Record<string, unknown> = {
-    usesModelStubs: false,
-    usesClosedShadowInstrumentation: false,
-  };
+  const evidence: Record<string, unknown> = new Proxy(
+    {
+      usesModelStubs: false,
+      usesClosedShadowInstrumentation: false,
+    } as Record<string, unknown>,
+    {
+      set(target, key, value) {
+        console.log("context-page:", String(key), JSON.stringify(value));
+        return Reflect.set(target, key, value);
+      },
+    },
+  );
   const nonce = crypto.randomUUID();
   const fixtureUrl = `https://context-fixture.test/reading?run=${nonce}`;
   const errors: string[] = [];
@@ -115,10 +127,12 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       logLevel: "error",
     });
     const cdp = await context.browser()!.newBrowserCDPSession();
+    console.log("context-page: loading extension");
     const { id } = await cdp.send("Extensions.loadUnpacked", {
       path: path.resolve(".output/chrome-mv3"),
     });
     bridge = await context.newPage();
+    console.log("context-page: opening bridge");
     await bridge.goto(`chrome-extension://${id}/options.html`);
     const cache = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
@@ -128,6 +142,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
     );
     expect(cache.ok).toBe(true);
     expect(cache.value.complete).toBe(true);
+    console.log("context-page: cached model confirmed");
     originalSettings = await bridge.evaluate(
       async () =>
         (await chrome.storage.local.get("settings")).settings as Settings,
@@ -179,6 +194,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       });
     });
     const page = await context.newPage();
+    console.log("context-page: opening unique fixture");
     page.on("pageerror", (error) => errors.push(String(error)));
     await page.goto(fixtureUrl);
     await expect(page.locator("[data-yaku-floating]")).toBeVisible();
@@ -186,6 +202,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       return sendFixture(bridge!, page, action, payload);
     }
     await send("restore-page");
+    console.log("context-page: starting IME composition");
     const input = page.locator("#ime");
     await input.fill("");
     await input.focus();
@@ -214,6 +231,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       selectionEnd: 4,
     });
     const composingText = await input.inputValue();
+    console.log("context-page: requesting translation during composition");
     await send("translate-input");
     expect(await input.inputValue()).toBe(composingText);
     await inputCdp.send("Input.imeSetComposition", {
@@ -349,13 +367,34 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
         .getVoices()
         .map((voice) => ({ language: voice.lang, local: voice.localService })),
     );
-    const localEnglish = (evidence.speechVoices as {language:string;local:boolean}[]).some(voice=>voice.local&&voice.language.toLowerCase().startsWith('en'));
+    const localEnglish = (
+      evidence.speechVoices as { language: string; local: boolean }[]
+    ).some(
+      (voice) => voice.local && voice.language.toLowerCase().startsWith("en"),
+    );
     if (localEnglish) {
-      await page.locator('#hover').evaluate(element=>{const range=document.createRange();range.selectNodeContents(element);getSelection()!.removeAllRanges();getSelection()!.addRange(range);element.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,composed:true}));});
-      await clickContextButton(page,'Listen to original');
-      evidence.localSpeechAttempt=await page.evaluate(()=>({speaking:speechSynthesis.speaking,pending:speechSynthesis.pending,paused:speechSynthesis.paused,headlessAudioNotAudited:true}));
-      await page.keyboard.press('Escape');
-    } else evidence.localSpeechAttempt={availableMatchingLocalVoice:false,pronunciationNotClaimed:true};
+      await page.locator("#hover").evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(range);
+        element.dispatchEvent(
+          new MouseEvent("mouseup", { bubbles: true, composed: true }),
+        );
+      });
+      await clickContextButton(page, "Listen to original");
+      evidence.localSpeechAttempt = await page.evaluate(() => ({
+        speaking: speechSynthesis.speaking,
+        pending: speechSynthesis.pending,
+        paused: speechSynthesis.paused,
+        headlessAudioNotAudited: true,
+      }));
+      await page.keyboard.press("Escape");
+    } else
+      evidence.localSpeechAttempt = {
+        availableMatchingLocalVoice: false,
+        pronunciationNotClaimed: true,
+      };
     await bridge.evaluate(async () => {
       const settings = (await chrome.storage.local.get("settings"))
         .settings as Settings;

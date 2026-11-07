@@ -39,6 +39,8 @@ Production dependency license files and metadata are copied into the extension's
 
 Page-image actions originate from the browser's image context menu. The service worker retains the selected URL with its tab/frame identity; content scripts cannot turn this route into an arbitrary cross-origin fetch proxy. The offscreen document processes pixels with the same OCR and image-export feature used by the workspace, then requests the shared model worker. Content scripts keep responsive source attributes and original nodes for restoration, and reject stale results after source changes. Image fetching omits credentials; private/authenticated resources can therefore be unavailable.
 
+Reader batches begin with a separate explicit image-menu action. Their authorization stores only a session identity and tab/frame binding in `chrome.storage.session`, allowing the background worker to restart without losing that binding. Before fetching each image, a frame-scoped isolated script verifies that its URL belongs to a loaded image near the viewport. Content schedules visible/lazy images serially and skips OCR results without text. Stop cancels pending work; restore also recovers completed replacements. Closing the tab removes its batch authorizations.
+
 ## Deliberate boundaries
 
 Reference service billing, remote availability, authenticated player behavior and unobserved site integrations are not established by static package analysis. A generic text-track adapter is not evidence of all-platform subtitle support. The parity ledger remains open for those workflows.

@@ -22,10 +22,12 @@ The native PDF download test produced a two-page PDF with the source page's exac
 
 ## Acceptance still in progress
 
-- Storage-error journeys, protected-PDF UI and final regression after shared-layout changes.
+- The integrated build passes strict TypeScript, import boundaries and 130 unit tests. OPFS allocation/write failures and lifecycle serialization have controlled regression coverage; physical disk exhaustion has not been simulated.
+- Protected-PDF missing/incorrect/correct password journeys and real translated PDF export passed. Passwords were absent from extension storage after the test.
+- Real Chrome regression for React-preserving page rendering, context/editor interactions, scoped glossaries and lazy-image batches is in progress.
 - Broader input/editor, subtitle-platform, PDF-layout and image-reader scenarios.
 - Original-extension runtime comparison and site-specific differences.
 - Visual review after all final surface changes.
-- Complete feature-parity disposition, clean build, package and repository publication.
+- Complete feature-parity disposition and final package acceptance. The implementation checkpoint is published in [draft PR #1](https://github.com/stvlynn/yaku/pull/1); publication is not final acceptance.
 
 No complete-parity or final acceptance claim is justified until the remaining work is resolved.
