@@ -1,46 +1,20 @@
-# Deployment
+# Distribution
 
-> How the project is built and deployed.
-
-## Deployment target
-
-- Hosting: `__HOSTING__`
-- CI/CD platform: `__CI_CD__`
-- Container registry: `__REGISTRY__`
-
-## Build
+Yaku is distributed as a Chrome Manifest V3 extension, not a hosted application.
 
 ```sh
-__BUILD_COMMAND__
+pnpm install --frozen-lockfile
+pnpm check
+pnpm lint
+pnpm test
+pnpm build
+pnpm zip
 ```
 
-## Deploy
+The build copies version-matched local ONNX, OCR and PDF workers/WASM and generates toolbar icons from the shared theme. Load `.output/chrome-mv3` for manual acceptance. The ZIP produced by WXT is the package for a later Chrome Web Store submission; repository publication does not imply a store listing.
 
-```sh
-__DEPLOY_COMMAND__
-```
+CI runs type checks, structural tests and the production build, then retains the unpacked extension artifact. GPU/browser acceptance is recorded separately because a generic CI runner does not establish WebGPU availability or model output quality.
 
-Deployment assets (Dockerfiles, Kubernetes manifests) live in [`deploy/`](../../deploy/README.md). They are placeholders and must be adjusted to the project's actual stack and hosting environment.
+Publish source changes with their lockfile, notices, evidence summaries and actual validation results. Exclude `.workspace`, model weights, browser profiles, third-party reference packages and generated runtime assets from Git. Preserve unresolved parity items rather than relabeling partial verification as complete.
 
-## Database migrations
-
-- Run migrations as part of the deployment pipeline.
-- Back up production data before running destructive migrations.
-- Migrations should be idempotent and reversible when possible.
-
-## Rollback
-
-- Keep the previous release available for quick rollback.
-- Document the rollback command and expected recovery time.
-
-## Health checks
-
-- Expose a `/health` endpoint.
-- Health checks should verify database connectivity and critical dependencies.
-- Do not include dependency details in the public health response that could aid attackers.
-
-## Monitoring
-
-- Collect logs with structured JSON.
-- Set up alerts for error rate, latency, and dependency failures.
-- Use correlation IDs to trace requests across services.
+For rollback during development, rebuild the prior commit into the same unpacked-extension path and reload it. Browser-origin model storage is independent of source files; changing extension identity, profile or uninstalling can remove access to that cache. Do not assume a new installation inherits it.

@@ -4,6 +4,8 @@ This section defines testing strategy, code-review expectations, and quality gat
 
 ## Documents
 
+- [`validation.md`](validation.md) — observed checks and remaining acceptance work.
+
 - [`testing.md`](testing.md) — testing strategy and test types.
 - [`code-review.md`](code-review.md) — code-review checklist.
 - [`agent-skills.md`](agent-skills.md) — installed Agent Skills for UI craft and anti-slop.

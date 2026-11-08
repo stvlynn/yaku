@@ -76,6 +76,19 @@ When building or reviewing UI, apply the project Agent Skills in [`.agents/skill
 
 Do not introduce a second styling system just to apply a polish fix. Express the change in the project's existing tokens and FSD layers.
 
+## Motion and interaction states
+
+Motion tokens live in `shared/styles/tokens.css` and are shared by extension pages and shadow-DOM content UI: `--ease-out`, `--duration-press` and `--duration-popover`.
+
+- Pressable controls scale to `0.97` on `:active` with `--duration-press`. Drag handles are exempt.
+- Popovers and select popups animate `opacity` and `transform` from `scale(0.97)` with `transform-origin: var(--transform-origin)`. Exit is faster than enter.
+- Hover styles sit inside `@media (hover: hover) and (pointer: fine)`.
+- Transitions name exact properties; never `transition: all`. Only `transform` and `opacity` move.
+- Frequent or keyboard-driven actions do not animate: page-load floating control, list highlight, settings section switch, selection/hover results.
+- First-run surfaces may settle in once (onboarding step content, sample stagger). Operational surfaces stay still.
+- `prefers-reduced-motion: reduce` removes animation and transitions on pages and in shadow roots.
+- Nested radii are concentric: outer radius equals inner radius plus padding.
+
 ## Accessibility
 
 - Use semantic HTML (`button`, `a`, `label`, `nav`, `main`).

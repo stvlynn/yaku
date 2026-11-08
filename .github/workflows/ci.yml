@@ -10,22 +10,23 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup runtime
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yaku-chrome
+          path: .output/chrome-mv3
 
-      - name: Install dependencies
-        run: echo 'Replace with install command'
-
-      - name: Lint
-        run: echo 'Replace with lint command'
-
-      - name: Type check
-        run: echo 'Replace with typecheck command'
-
-      - name: Test
-        run: echo 'Replace with test command'
+# GPU acceptance runs on a real WebGPU-capable Chrome host; a headless build
+# artifact alone is not model or extension end-to-end acceptance.
