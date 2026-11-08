@@ -10,6 +10,7 @@ import {
 } from "./harness.mjs";
 
 const result = { completed: false, usesModelStubs: false };
+const dental = process.argv.includes("--terminology");
 const url = `http://article-context.test/canoe?run=${crypto.randomUUID()}`;
 let session;
 try {
@@ -17,7 +18,23 @@ try {
   const { context, page: bridge } = session;
   result.identity = session.backgroundIdentity;
   result.cache = await requireCachedModel(session.send);
-  await bridge.evaluate(async () => {
+  const worker = context
+    .serviceWorkers()
+    .find(
+      (worker) => worker.url() === new URL("background.js", bridge.url()).href,
+    );
+  assert.ok(worker);
+  await worker.evaluate(() => {
+    globalThis.articleRequests = [];
+    chrome.runtime.onMessage.addListener((message) => {
+      if (
+        message?.destination === "background" &&
+        message.action === "translate"
+      )
+        globalThis.articleRequests.push(message.payload);
+    });
+  });
+  await bridge.evaluate(async (dental) => {
     const { settings } = await chrome.storage.local.get("settings");
     await chrome.storage.local.set({
       settings: {
@@ -27,15 +44,17 @@ try {
         autoTranslate: false,
         mode: "bilingual",
         siteRules: [],
-        glossary: {},
+        glossary: dental ? { molar: "臼齿" } : {},
         glossaries: [],
       },
     });
-  });
+  }, dental);
   await context.route(url, (route) =>
     route.fulfill({
       contentType: "text/html; charset=utf-8",
-      body: `<!doctype html><title>A canoe trip downstream</title><main><p>Maya paddled her canoe past the reeds and looked for a dry place beside the river.</p><p id="passage">She finally reached the bank.</p><p>She tied the canoe to a tree and climbed onto the grass.</p></main>`,
+      body: dental
+        ? `<!doctype html><title>Dental treatment</title><main><p>The dentist prepared the molar for a ceramic crown. The crown will protect the damaged tooth.</p><p id="passage">The crown arrived on Monday.</p><p>The crown cost 731 dollars.</p></main>`
+        : `<!doctype html><title>A canoe trip downstream</title><main><p>Maya paddled her canoe past the reeds and looked for a dry place beside the river.</p><p id="passage">She finally reached the bank.</p><p>She tied the canoe to a tree and climbed onto the grass.</p></main>`,
     }),
   );
   await context.setOffline(true);
@@ -69,17 +88,33 @@ try {
   await panel.close();
   await expect(rendered).toHaveCount(3, { timeout: 90000 });
   result.baseline = await target.textContent();
-  assert.match(result.baseline, /银行/u);
+  assert.match(result.baseline, dental ? /皇冠/u : /银行/u);
   panel = await popup();
   await panel.getByRole("button", { name: /^More reading controls/ }).click();
   await panel
     .getByRole("button", { name: "Translate with page context" })
     .click();
   await panel.close();
-  await expect(target).toContainText(/岸/u, { timeout: 90000 });
+  await expect(target).toContainText(dental ? /陶瓷.*冠/u : /岸/u, {
+    timeout: 90000,
+  });
   await expect(rendered).toHaveCount(3, { timeout: 90000 });
   result.contextual = await target.textContent();
-  assert.doesNotMatch(result.contextual, /银行/u);
+  assert.doesNotMatch(result.contextual, dental ? /皇冠/u : /银行/u);
+  if (dental) {
+    const requests = await worker.evaluate(() => globalThis.articleRequests);
+    assert.ok(
+      requests.some((request) => request.task === "extract-terminology"),
+    );
+    const propagated = requests.find(
+      (request) =>
+        request.text === "The crown arrived on Monday." &&
+        request.glossary?.crown,
+    );
+    assert.match(propagated?.glossary.crown ?? "", /陶瓷.*冠/u);
+    result.propagatedTerm = propagated.glossary.crown;
+    await expect(rendered.last()).toContainText("731");
+  }
   await target.evaluate((element) => {
     const range = document.createRange();
     range.selectNodeContents(element);
@@ -94,7 +129,9 @@ try {
   const comparison = page.getByRole("dialog", { name: "Compare page context" });
   await expect(comparison).toContainText(result.baseline, { timeout: 90000 });
   await expect(comparison).toContainText(result.contextual);
-  await expect(comparison.locator("mark")).toContainText("河岸");
+  await expect(comparison.locator("mark")).toContainText(
+    dental ? /陶瓷/u : "河岸",
+  );
   await expect(target).toHaveText(result.contextual);
   await comparison.getByRole("button", { name: "Close" }).click();
   result.pairedComparison = true;
@@ -108,7 +145,10 @@ try {
   result.error = String(error);
   process.exitCode = 1;
 } finally {
-  saveResult("article-context-product", result);
+  saveResult(
+    dental ? "article-terminology-product" : "article-context-product",
+    result,
+  );
   console.log(JSON.stringify(result));
   await session?.context.close();
 }

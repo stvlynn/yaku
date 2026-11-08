@@ -36,6 +36,36 @@ const setup = (
 };
 const target = () =>
   document.querySelector<HTMLElement>('[data-yaku-owned="translation"]')!;
+
+it("carries contextual terms to subsequent sibling passages and clears them on restore", async () => {
+  const { controller, settings, run } = setup(
+    "<main><p>A dental crown protects the tooth.</p><p>The crown arrived.</p><section><p>The crown was displayed at the palace.</p></section></main>",
+  );
+  settings.glossary = { tooth: "牙齿" };
+  run.mockImplementation(async (request) => ({
+    id: request.id,
+    elapsedMs: 0,
+    text: request.text,
+    terms:
+      request.task === "extract-terminology" ? { crown: "牙冠" } : undefined,
+  }));
+  await controller.translatePage({ articleContext: true });
+  const [first, extract, second, palace] = run.mock.calls.map(
+    ([request]) => request,
+  );
+  expect(first?.task).toBeUndefined();
+  expect(extract?.terminologyEvidence?.later).toEqual(["The crown arrived."]);
+  expect(second?.glossary).toEqual({ crown: "牙冠", tooth: "牙齿" });
+  expect(palace?.glossary).toEqual({ tooth: "牙齿" });
+  controller.restore();
+  run.mockClear();
+  await controller.translatePage();
+  expect(
+    run.mock.calls.every(
+      ([request]) => !request.task && !request.glossary?.crown,
+    ),
+  ).toBe(true);
+});
 afterEach(() => {
   controllers.splice(0).forEach((controller) => controller.dispose());
   history.replaceState(null, "", initialUrl);

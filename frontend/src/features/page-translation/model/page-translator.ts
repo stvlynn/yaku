@@ -72,9 +72,11 @@ const styles = {
 
 type RecordEntry = {
   articleBackground?: { title: string; nearby: readonly string[] };
+  later?: readonly { block: TranslationRoot; text: string }[];
   comparison?: {
     request: Omit<TranslationRequest, "id">;
     decode: (text: string) => DocumentFragment;
+    automatic?: Record<string, string>;
   };
   block: TranslationRoot;
   nodes: Text[];
@@ -122,6 +124,9 @@ export function createPageTranslator({
   let visibility: IntersectionObserver | undefined;
   let wholePageScope = false;
   let withArticleContext = false;
+  let contextQueue = Promise.resolve();
+  let terminologyRevision = 0;
+  const articleTerms = new Map<TranslationRoot, Record<string, string>>();
   let translationSettings = "";
   const routeKey = () =>
     `${view.location.pathname}${view.location.search}${/^#!?\//.test(view.location.hash) ? view.location.hash : ""}`;
@@ -374,6 +379,17 @@ export function createPageTranslator({
     );
   }
 
+  function scheduleRender(entry: RecordEntry): Promise<void> {
+    if (!withArticleContext) return render(entry);
+    const token = generation;
+    const task = contextQueue.then(async () => {
+      if (token === generation && entries.get(entry.block) === entry)
+        await render(entry);
+    });
+    contextQueue = task.catch(onError);
+    return task;
+  }
+
   async function render(entry: RecordEntry): Promise<void> {
     if (!active || disposed || entry.pending || entry.target) return;
     entry.pending = true;
@@ -432,9 +448,16 @@ export function createPageTranslator({
           ? entry.articleBackground
           : undefined,
       };
-      const result = await translate({ id, ...request }).finally(() =>
-        requests.delete(id),
-      );
+      const automatic = withArticleContext
+        ? articleTerms.get(entry.block)
+        : undefined;
+      const result = await translate({
+        id,
+        ...request,
+        glossary: automatic
+          ? { ...automatic, ...request.glossary }
+          : request.glossary,
+      }).finally(() => requests.delete(id));
       if (
         !active ||
         token !== generation ||
@@ -451,6 +474,7 @@ export function createPageTranslator({
         ? {
             request: { ...request, articleBackground: entry.articleBackground },
             decode: codec.decode,
+            automatic,
           }
         : undefined;
       target.addEventListener("click", (event) => {
@@ -467,6 +491,46 @@ export function createPageTranslator({
         entry.target = target;
         refreshStyle(entry);
       });
+      const later = withArticleContext ? entry.later : undefined;
+      if (later?.length) {
+        const revision = terminologyRevision;
+        const extractionId = createRequestId();
+        requests.add(extractionId);
+        try {
+          const extracted = await translate({
+            id: extractionId,
+            task: "extract-terminology",
+            text: entry.values.join(""),
+            sourceLanguage: request.sourceLanguage,
+            targetLanguage: request.targetLanguage,
+            glossary: request.glossary,
+            terminologyEvidence: {
+              translation: target.textContent ?? "",
+              later: later.map((item) => item.text),
+            },
+          });
+          if (
+            token !== generation ||
+            revision !== terminologyRevision ||
+            !sourceUnchanged(entry)
+          )
+            return;
+          for (const item of later) {
+            const matching = Object.fromEntries(
+              Object.entries(extracted.terms ?? {}).filter(([term]) =>
+                item.text.includes(term),
+              ),
+            );
+            if (Object.keys(matching).length)
+              articleTerms.set(item.block, {
+                ...matching,
+                ...articleTerms.get(item.block),
+              });
+          }
+        } finally {
+          requests.delete(extractionId);
+        }
+      }
     } catch (error) {
       if (active && token === generation && version === entry.version)
         onError?.(error);
@@ -532,6 +596,16 @@ export function createPageTranslator({
       };
       entry.nodes = nodes;
       entry.values = nodes.map((node) => node.data);
+      if (withArticleContext && block.nodeType === 1) {
+        const parent = (block as Element).parentElement;
+        entry.later = blocks
+          .slice(index + 1, index + 5)
+          .filter(
+            ([next]) =>
+              next.nodeType === 1 && (next as Element).parentElement === parent,
+          )
+          .map(([block, nodes]) => ({ block, text: excerpt(nodes) }));
+      }
       {
         const nearby = [blocks[index - 1], blocks[index + 1]]
           .flatMap((neighbor) =>
@@ -561,7 +635,7 @@ export function createPageTranslator({
       if (!active) break;
       if (!immediate && visibility)
         visibility.observe(visibilityTarget(entry.block));
-      else await render(entry);
+      else await scheduleRender(entry);
     }
   }
 
@@ -641,6 +715,10 @@ export function createPageTranslator({
       )
         changed = true;
     }
+    if (changed) {
+      terminologyRevision++;
+      articleTerms.clear();
+    }
     if (changed && !scheduled) {
       scheduled = true;
       queueMicrotask(() => {
@@ -653,6 +731,8 @@ export function createPageTranslator({
   function restore() {
     active = false;
     generation++;
+    contextQueue = Promise.resolve();
+    articleTerms.clear();
     for (const id of requests) void cancel?.(id).catch(onError);
     requests.clear();
     observer?.disconnect();
@@ -684,7 +764,7 @@ export function createPageTranslator({
       const entry = entries.get(block);
       if (!entry?.target || !entry.comparison || !sourceUnchanged(entry))
         return;
-      const { request, decode } = entry.comparison;
+      const { request, decode, automatic } = entry.comparison;
       const target = entry.target;
       const token = generation;
       const route = routeKey();
@@ -700,7 +780,15 @@ export function createPageTranslator({
         };
         signal.addEventListener("abort", abort, { once: true });
         try {
-          const result = await translate({ ...request, id, articleBackground });
+          const result = await translate({
+            ...request,
+            id,
+            articleBackground,
+            glossary:
+              articleBackground && automatic
+                ? { ...automatic, ...request.glossary }
+                : request.glossary,
+          });
           return decode(result.text).textContent ?? "";
         } finally {
           signal.removeEventListener("abort", abort);
@@ -768,7 +856,7 @@ export function createPageTranslator({
                 visibility?.unobserve(item.target);
                 for (const entry of entries.values())
                   if (visibilityTarget(entry.block) === item.target)
-                    void render(entry);
+                    void scheduleRender(entry);
               }
           },
           { rootMargin: "300px" },
