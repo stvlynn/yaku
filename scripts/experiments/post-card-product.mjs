@@ -6,6 +6,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { launchExtension, requireCachedModel, saveResult } from "./harness.mjs";
 
 const result = { completed: false, syntheticPost: true };
+const timeline = process.argv.includes("--timeline");
 let session;
 try {
   session = await launchExtension();
@@ -27,7 +28,7 @@ try {
       },
     });
   });
-  const url = `https://x.com/example/status/731?run=${crypto.randomUUID()}`;
+  const url = `https://x.com/${timeline ? "example" : "example/status/731"}?run=${crypto.randomUUID()}`;
   const assetOrigin = "https://pbs.twimg.com";
   const assets = {
     "/profile_images/avatar.png": { rgb: [20, 90, 230], cors: true },
@@ -70,6 +71,13 @@ try {
   );
   await cdp.send("Runtime.enable");
   await page.goto(url);
+  if (timeline)
+    await page.locator("main").evaluate((main) => {
+      const neighbor = document.createElement("article");
+      neighbor.innerHTML =
+        '<a href="/other/status/222" translate="no"><time>Tuesday</time></a><div data-testid="tweetText">A neighboring post about bicycles.</div>';
+      main.prepend(neighbor);
+    });
   const send = (action, payload) =>
     bridge.evaluate(
       async ({ url, action, payload }) => {
@@ -87,7 +95,10 @@ try {
   await expect.poll(async () => (await send("page-state")).ok).toBe(true);
   assert.equal((await send("post-card")).ok, false);
   assert.equal((await send("translate-page")).ok, true);
-  const target = page.locator(
+  const post = page
+    .locator("article")
+    .filter({ has: page.locator('a[href="/example/status/731"]') });
+  const target = post.locator(
     '[data-testid="tweetText"] [data-yaku-owned="translation"]',
   );
   await expect(target).toContainText(/图书馆/u, { timeout: 90000 });
@@ -96,6 +107,10 @@ try {
   await page.keyboard.press("Control+End");
   await page.keyboard.insertText(" 修订。");
   await expect(target).toContainText("修订。");
+  if (timeline) {
+    assert.equal((await send("post-card")).ok, false);
+    await target.click({ button: "right" });
+  }
   const reply = await send("post-card");
   assert.equal(reply.ok, true, reply.error);
   const dialog = page.getByRole("dialog", { name: "Bilingual post card" });
@@ -169,13 +184,17 @@ try {
   }
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+  if (timeline) {
+    assert.equal((await send("post-card")).ok, false);
+    result.timelineTargetConsumed = true;
+  }
   result.pngBytes = png.length;
   result.completed = true;
 } catch (error) {
   result.error = String(error);
   process.exitCode = 1;
 } finally {
-  saveResult("post-card-product", result);
+  saveResult(timeline ? "post-card-timeline-product" : "post-card-product", result);
   console.log(JSON.stringify(result));
   await session?.context.close();
 }

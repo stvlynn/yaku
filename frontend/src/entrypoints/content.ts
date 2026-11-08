@@ -3,6 +3,7 @@ import {
   openContextDialog,
   reliableLanguageObservation,
 } from "../features/page-translation";
+import { previewPostCard, trackPostCardTarget } from "../features/post-card";
 import { installContextTranslation } from "../features/context-translation";
 import {
   installVideoSubtitles,
@@ -111,6 +112,7 @@ export default defineContentScript({
         }),
     });
     let manualRevision = 0;
+    const postCardTarget = trackPostCardTarget(document);
     let closeComparison: (() => void) | undefined;
     let editingRevision = 0;
     async function translateManually(
@@ -214,11 +216,11 @@ export default defineContentScript({
               return;
             }
             case "post-card": {
-              const { previewPostCard } = await import("../features/post-card");
               await previewPostCard(
                 document,
                 getSettings().theme,
                 page.translatedPassages,
+                postCardTarget.take(),
               );
               return;
             }
@@ -317,6 +319,7 @@ export default defineContentScript({
       }
     })().catch(onError);
     ctx.onInvalidated(() => {
+      postCardTarget.dispose();
       closeComparison?.();
       manualRevision++;
       editingRevision++;

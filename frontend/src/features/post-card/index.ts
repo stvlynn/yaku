@@ -4,34 +4,91 @@ import { wrapText } from "../../shared/text-layout";
 import { drawContained, readPostMedia } from "./media";
 
 type Passage = { source: string; translation: string };
+const postHosts = new Set([
+  "x.com",
+  "twitter.com",
+  "www.x.com",
+  "www.twitter.com",
+]);
+const postPath = /^\/([\w]+)\/status\/(\d+)\/?$/;
+
+function postPermalink(article: Element) {
+  const links = [
+    ...article.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]'),
+  ]
+    .filter(
+      (link) =>
+        link.closest("article") === article && link.querySelector("time"),
+    )
+    .flatMap((link) => {
+      if (!URL.canParse(link.href)) return [];
+      const url = new URL(link.href);
+      const match =
+        postHosts.has(url.hostname) && url.protocol === "https:"
+          ? postPath.exec(url.pathname)
+          : null;
+      return match ? [`https://x.com/${match[1]}/status/${match[2]}`] : [];
+    });
+  const distinct = [...new Set(links)];
+  return distinct.length === 1 ? distinct[0] : undefined;
+}
+
+export function trackPostCardTarget(document: Document) {
+  let selected: { article: Element; url: string } | undefined;
+  const controller = new AbortController();
+  if (postHosts.has(document.location.hostname))
+    document.addEventListener(
+      "contextmenu",
+      (event) => {
+        selected = undefined;
+        if (!event.isTrusted || !(event.target instanceof Element)) return;
+        const article = event.target.closest("article");
+        if (article) selected = { article, url: document.location.href };
+      },
+      { capture: true, signal: controller.signal },
+    );
+  return {
+    take() {
+      const captured = selected;
+      selected = undefined;
+      return captured?.article.isConnected &&
+        captured.url === document.location.href
+        ? captured.article
+        : undefined;
+    },
+    dispose: () => controller.abort(),
+  };
+}
 
 export async function previewPostCard(
   document: Document,
   theme: string,
   read: (root: Element) => Passage | undefined,
+  selected?: Element,
 ) {
   const location = document.location;
   const pathname = location.pathname;
-  const match = /^\/([\w]+)\/status\/(\d+)\/?$/.exec(location.pathname);
-  if (
-    !match ||
-    !["x.com", "twitter.com", "www.x.com", "www.twitter.com"].includes(
-      location.hostname,
-    )
-  )
+  if (!postHosts.has(location.hostname))
+    throw new Error(copy.postCardUnavailable);
+  const current = postPath.exec(pathname);
+  const currentLink = current
+    ? `https://x.com/${current[1]}/status/${current[2]}`
+    : undefined;
+  const article =
+    selected ??
+    (currentLink
+      ? [...document.querySelectorAll("article")].find(
+          (article) => postPermalink(article) === currentLink,
+        )
+      : undefined);
+  const permalink = article && postPermalink(article);
+  const match = permalink && postPath.exec(new URL(permalink).pathname);
+  if (!article || !permalink || !match)
     throw new Error(copy.postCardUnavailable);
   const [, account, id] = match;
-  const permalink = `https://x.com/${account}/status/${id}`;
-  const article = [...document.querySelectorAll("article")].find((article) =>
-    [
-      ...article.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]'),
-    ].some(
-      (link) =>
-        link.querySelector("time") &&
-        new URL(link.href).pathname === `/${account}/status/${id}`,
-    ),
+  const post = [...article.querySelectorAll('[data-testid="tweetText"]')].find(
+    (element) => element.closest("article") === article,
   );
-  const post = article?.querySelector('[data-testid="tweetText"]');
   const passage = post && read(post);
   if (
     !article ||
@@ -153,7 +210,12 @@ export async function previewPostCard(
   const png = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, "image/png"),
   );
-  if (!png || document.location.pathname !== pathname || !post.isConnected)
+  if (
+    !png ||
+    document.location.pathname !== pathname ||
+    !post.isConnected ||
+    postPermalink(article) !== permalink
+  )
     throw new Error(copy.postCardUnavailable);
   const url = URL.createObjectURL(png);
   const host = document.createElement("div");

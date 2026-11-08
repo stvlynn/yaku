@@ -298,10 +298,7 @@ export default defineBackground(() => {
       id: "post-card",
       title: copy.postCard,
       contexts: ["page"],
-      documentUrlPatterns: [
-        "https://*.x.com/*/status/*",
-        "https://*.twitter.com/*/status/*",
-      ],
+      documentUrlPatterns: ["https://*.x.com/*", "https://*.twitter.com/*"],
     });
     chrome.contextMenus.create({
       id: "toggle-page",
