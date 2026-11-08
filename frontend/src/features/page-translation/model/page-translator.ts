@@ -67,6 +67,7 @@ const styles = {
 } satisfies Record<Settings["style"], string>;
 
 type RecordEntry = {
+  articleBackground?: { title: string; nearby: readonly string[] };
   block: TranslationRoot;
   nodes: Text[];
   values: string[];
@@ -112,6 +113,7 @@ export function createPageTranslator({
   let observer: MutationObserver | undefined;
   let visibility: IntersectionObserver | undefined;
   let wholePageScope = false;
+  let withArticleContext = false;
   let translationSettings = "";
   const routeKey = () =>
     `${view.location.pathname}${view.location.search}${/^#!?\//.test(view.location.hash) ? view.location.hash : ""}`;
@@ -133,7 +135,10 @@ export function createPageTranslator({
     observedRoute = next;
     if (active)
       void controller
-        .translatePage({ wholePage: wholePageScope })
+        .translatePage({
+          wholePage: wholePageScope,
+          articleContext: withArticleContext,
+        })
         .catch(onError);
   }
   view.addEventListener("popstate", routeChanged, { signal: lifecycle.signal });
@@ -416,6 +421,7 @@ export function createPageTranslator({
         targetLanguage: settings.targetLanguage,
         glossary: settings.glossary,
         context: codec.instruction,
+        articleBackground: entry.articleBackground,
       }).finally(() => requests.delete(id));
       if (
         !active ||
@@ -480,7 +486,20 @@ export function createPageTranslator({
     }
     observeRoots();
     const added: RecordEntry[] = [];
-    for (const [block, nodes] of grouped) {
+    const blocks = [...grouped];
+    const excerpt = (nodes: Text[]) =>
+      Array.from(
+        nodes
+          .map((node) => node.data)
+          .join("")
+          .trim(),
+      )
+        .slice(0, 300)
+        .join("");
+    const title = withArticleContext
+      ? Array.from(document.title.trim()).slice(0, 160).join("")
+      : "";
+    for (const [index, [block, nodes]] of blocks.entries()) {
       const existing = entries.get(block);
       if (existing?.target || existing?.pending || existing?.skipped) continue;
       const entry: RecordEntry = existing ?? {
@@ -497,6 +516,17 @@ export function createPageTranslator({
       };
       entry.nodes = nodes;
       entry.values = nodes.map((node) => node.data);
+      if (withArticleContext) {
+        const nearby = [blocks[index - 1], blocks[index + 1]]
+          .flatMap((neighbor) =>
+            neighbor && neighbor[0].getRootNode() === block.getRootNode()
+              ? [excerpt(neighbor[1])]
+              : [],
+          )
+          .filter(Boolean);
+        entry.articleBackground =
+          title || nearby.length ? { title, nearby } : undefined;
+      }
       entries.set(block, entry);
       added.push(entry);
     }
@@ -505,7 +535,10 @@ export function createPageTranslator({
 
   async function scan(immediate: boolean) {
     if (scope && !scope.isConnected) {
-      await controller.translatePage({ wholePage: wholePageScope });
+      await controller.translatePage({
+        wholePage: wholePageScope,
+        articleContext: withArticleContext,
+      });
       return;
     }
     for (const entry of collect()) {
@@ -623,11 +656,13 @@ export function createPageTranslator({
     },
     async translatePage({
       wholePage = false,
-    }: { wholePage?: boolean } = {}): Promise<void> {
+      articleContext = false,
+    }: { wholePage?: boolean; articleContext?: boolean } = {}): Promise<void> {
       if (disposed) return;
       restore();
       active = true;
       wholePageScope = wholePage;
+      withArticleContext = articleContext;
       translationSettings = settingsKey();
       observedRoute = routeKey();
       const rule = getSettings().siteRules.find(
@@ -670,7 +705,10 @@ export function createPageTranslator({
       mode = next;
       if (active && translationSettings !== settingsKey()) {
         void controller
-          .translatePage({ wholePage: wholePageScope })
+          .translatePage({
+            wholePage: wholePageScope,
+            articleContext: withArticleContext,
+          })
           .catch(onError);
         return;
       }

@@ -46,6 +46,8 @@ All three result files under `.workspace/experiments/results/` have `completed: 
 
 ## Implementation consequence
 
+Reading controls now offers **Translate with page context** as an explicit page translation action. The collector supplies the title and adjacent eligible original text from the same DOM root. It reuses the regular page scope and exclusions, and bounds each excerpt to 300 Unicode code points and the title to 160. These are excerpt limits for the initial workflow. The request carries that data separately from format instructions and manual terminology. Ordinary Translate remains the baseline, and contextual translation is a fresh reading run with the existing restore and retranslation behavior.
+
 The evidence supports implementing an explicit, source-grounded article-background path with separately typed semantic context and unchanged format instructions. It does **not** justify presenting automatic summaries as verified facts or claiming automatic terminology/context parity. Generated-theme preparation, extractive grounding, automatic term adoption and their lifecycle remain required work from the [article-context specification](article-context.md).
 
 Next compare grounded extraction against the observed free summaries, then test ordered automatic-term propagation and manual-term precedence. Preserve the direct-original arm as the control. Comparison must show two independently generated results from one frozen source/settings snapshot, with identical manual terminology and format constraints; it must not overwrite temporary edits or manufacture a visible difference when results match.

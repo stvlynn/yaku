@@ -1,6 +1,7 @@
 export const copy = {
   moreReadingControls: "More reading controls",
   readingControls: "Reading controls",
+  translateWithContext: "Translate with page context",
   temporaryEditing: "Temporary editing",
   temporaryEditingOn: "Temporary editing on",
   chooseSubtitleTrack: "Choose captions",

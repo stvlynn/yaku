@@ -182,3 +182,23 @@ describe("temporary page translation editing", () => {
     expect(preventedByEditor).toBe(false);
   });
 });
+
+it("uses neighboring original passages on explicit contextual translation without replacing format instructions", async () => {
+  const { controller, run } = setup(
+    '<main><p>Before the meeting.</p><p>Read the <a href="/guide">complete guide</a>.</p><p hidden>Hidden note.</p><p translate="no">Excluded note.</p><p>After the meeting.</p></main>',
+  );
+  await controller.translatePage();
+  expect(run.mock.calls.every(([request]) => !request.articleBackground)).toBe(
+    true,
+  );
+  run.mockClear();
+  await controller.translatePage({ articleContext: true });
+  const request = run.mock.calls.find(([input]) =>
+    input.text.includes("complete guide"),
+  )?.[0];
+  expect(request?.articleBackground?.nearby).toEqual([
+    "Before the meeting.",
+    "After the meeting.",
+  ]);
+  expect(request?.context).toContain("yaku-link");
+});

@@ -31,6 +31,7 @@ export interface PopupPageProps extends PreferencesProps {
   temporaryTranslationUntil?: number;
   onStopTemporaryTranslation?: () => void;
   onTranslatePage: () => void;
+  onTranslateWithContext?: () => void;
   onRestorePage: () => void;
   onOpenWorkspace: () => void;
   onOpenSettings: () => void;
@@ -92,6 +93,19 @@ export function PopupPage(props: PopupPageProps) {
                         onChange={props.onTemporaryEditingChange}
                       />
                     </div>
+                    {props.onTranslateWithContext && (
+                      <button
+                        type="button"
+                        className="button button--ghost"
+                        disabled={busy || props.temporaryEditing === undefined}
+                        onClick={() => {
+                          setReadingOpen(false);
+                          props.onTranslateWithContext?.();
+                        }}
+                      >
+                        {copy.translateWithContext}
+                      </button>
+                    )}
                     {error && <Notice>{error}</Notice>}
                   </Popover.Popup>
                 </Popover.Positioner>

@@ -8,6 +8,7 @@ export interface TranslationRequest {
   targetLanguage: string;
   sourceLanguage?: string;
   context?: string;
+  articleBackground?: { title: string; nearby: readonly string[] };
   glossary?: Record<string, string>;
   task?: "translate" | "rewrite" | "explain";
   writingStyle?: "grammar" | "polite" | "concise" | "formal";

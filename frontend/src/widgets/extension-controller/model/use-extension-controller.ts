@@ -272,7 +272,9 @@ export function useExtensionController(surface: Surface) {
   function openSettings() {
     void chrome.runtime.openOptionsPage();
   }
-  async function pageAction(action: "translate-page" | "restore-page") {
+  async function pageAction(
+    action: "translate-page" | "translate-page-with-context" | "restore-page",
+  ) {
     try {
       setError(undefined);
       const [tab] = await chrome.tabs.query({
@@ -458,6 +460,8 @@ export function useExtensionController(surface: Surface) {
       temporaryTranslationUntil: temporaryTranslation?.expiresAt,
       onStopTemporaryTranslation: () => void stopTemporaryTranslation(),
       onTranslatePage: () => void pageAction("translate-page"),
+      onTranslateWithContext: () =>
+        void pageAction("translate-page-with-context"),
       onRestorePage: () => void pageAction("restore-page"),
       onOpenWorkspace: openWorkspace,
       onOpenSettings: openSettings,

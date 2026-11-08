@@ -111,9 +111,12 @@ export default defineContentScript({
     });
     let manualRevision = 0;
     let editingRevision = 0;
-    async function translateManually(wholePage = false) {
+    async function translateManually(
+      wholePage = false,
+      articleContext = false,
+    ) {
       manualRevision++;
-      void page.translatePage({ wholePage }).catch(onError);
+      void page.translatePage({ wholePage, articleContext }).catch(onError);
       if (
         window.top === window &&
         page.isActive() &&
@@ -190,6 +193,9 @@ export default defineContentScript({
             }
             case "translate-page":
               await translateManually();
+              return page.isActive();
+            case "translate-page-with-context":
+              await translateManually(false, true);
               return page.isActive();
             case "translate-whole-page":
               await translateManually(true);
