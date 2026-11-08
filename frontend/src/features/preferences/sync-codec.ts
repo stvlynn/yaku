@@ -112,6 +112,8 @@ export function decodeSyncedSettings(
         (key) =>
           key !== "syncPreferences" &&
           key !== "inputSpaceTrigger" &&
+          key !== "inputPrefixKey" &&
+          key !== "inputTrailingKey" &&
           key !== "inputTargetLanguage" &&
           key !== "inputMatchConversation" &&
           key !== "inputMatchPage" &&

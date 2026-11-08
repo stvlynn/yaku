@@ -4,6 +4,12 @@ import {
 } from "../../shared/translation-markup";
 import { contextErrors } from "./config";
 import { languages } from "../../shared/languages";
+import {
+  inputKeyCharacters,
+  inputTriggerPresses,
+  type InputPrefixKey,
+  type InputTrailingKey,
+} from "../../entities/settings";
 
 type Editor = HTMLInputElement | HTMLTextAreaElement | HTMLElement;
 type Snapshot = {
@@ -89,18 +95,25 @@ function richReplacement(root: HTMLElement, range: Range) {
   };
 }
 
-function inputDirective(text: string) {
+function inputDirective(text: string, prefix: InputPrefixKey) {
+  if (prefix === "none") return;
+  const key = `[${inputKeyCharacters(prefix)}]`;
   const matches = [
     ...text.matchAll(
-      /(?<!\S)\/\/\s*|(?<!\S)\/([a-z]{2,3}(?:-[a-z]+)?)(?=\s)\s*/giu,
+      new RegExp(
+        `(?<!\\S)${key}(?:${key}|([a-z]{2,3}(?:-[a-z]+)?)(?=\\s))\\s*`,
+        "giu",
+      ),
     ),
   ];
   for (const match of matches.reverse()) {
     const targetLanguage =
       match[1] &&
-      languages.find(
-        ([code]) => code.toLowerCase() === match[1]!.toLowerCase(),
-      )?.[0];
+      (match[1].toLowerCase() === "zht"
+        ? "zh-Hant"
+        : languages.find(
+            ([code]) => code.toLowerCase() === match[1]!.toLowerCase(),
+          )?.[0]);
     if (match[1] && !targetLanguage) continue;
     const start = match.index!;
     const end = match.index! + match[0].length;
@@ -201,7 +214,11 @@ export function createEditorTracker(
     rest.setStart(selection.anchorNode, selection.anchorOffset);
     return rest.toString() === "";
   }
-  function capture(element: Editor): Snapshot | undefined {
+  function capture(
+    element: Editor,
+    prefix: InputPrefixKey,
+    trailing?: InputTrailingKey,
+  ): Snapshot | undefined {
     if (composing.has(element)) return;
     const native = isNative(element);
     if (
@@ -213,10 +230,21 @@ export function createEditorTracker(
     )
       return;
     if (element.getAttribute("aria-readonly") === "true") return;
+    const original = native ? element.value : (element.textContent ?? "");
+    const trailingStart =
+      trailing === undefined
+        ? original.length
+        : original.search(
+            new RegExp(
+              `[${inputKeyCharacters(trailing)}]{${inputTriggerPresses}}$`,
+              "u",
+            ),
+          );
+    if (trailingStart < 0) return;
     const snapshot: Snapshot = {
       element,
       native,
-      text: native ? element.value : (element.textContent ?? ""),
+      text: original.slice(0, trailingStart),
       signature: signature(element),
       version: versions.get(element) ?? 0,
       originalNodes: native ? [] : [...element.childNodes],
@@ -233,7 +261,7 @@ export function createEditorTracker(
         snapshot.suffix = element.value.slice(end);
         snapshot.text = element.value.slice(start, end);
       } else {
-        const directive = inputDirective(snapshot.text);
+        const directive = inputDirective(snapshot.text, prefix);
         if (directive) {
           snapshot.hasDirective = true;
           snapshot.targetLanguage = directive.targetLanguage;
@@ -267,14 +295,12 @@ export function createEditorTracker(
         snapshot.richSelection && range && !range.collapsed ? range : undefined;
       const directive = selectedRange
         ? undefined
-        : inputDirective(snapshot.text);
+        : inputDirective(snapshot.text, prefix);
       if (selectedRange) {
         translationRoot = document.createElement("div");
         translationRoot.append(selectedRange.cloneContents());
         snapshot.replaceSelection = richReplacement(element, selectedRange);
-      } else if (directive) {
-        snapshot.hasDirective = true;
-        snapshot.targetLanguage = directive.targetLanguage;
+      } else if (directive || trailing !== undefined) {
         const range = document.createRange();
         range.selectNodeContents(element);
         const point = (offset: number): [Node, number] => {
@@ -286,10 +312,15 @@ export function createEditorTracker(
           }
           return [element, element.childNodes.length];
         };
-        range.setEnd(...point(directive.start));
-        snapshot.prefix = range.cloneContents();
-        range.selectNodeContents(element);
-        range.setStart(...point(directive.end));
+        if (directive) {
+          snapshot.hasDirective = true;
+          snapshot.targetLanguage = directive.targetLanguage;
+          range.setEnd(...point(directive.start));
+          snapshot.prefix = range.cloneContents();
+          range.selectNodeContents(element);
+          range.setStart(...point(directive.end));
+        }
+        if (trailing !== undefined) range.setEnd(...point(trailingStart));
         translationRoot = document.createElement("div");
         translationRoot.append(range.cloneContents());
       }

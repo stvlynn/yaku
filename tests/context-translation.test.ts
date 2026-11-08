@@ -57,6 +57,30 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it("uses the configured prefix and removes only the three trailing trigger characters", async () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><b>Keep</b> ；ja <em>Good morning.。。。</em></div>';
+    const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+    editor.focus();
+    const run = vi.fn<Translate>(async ({ id, text }) => ({
+      id,
+      text: text.replace("Good morning.", "おはようございます。"),
+      elapsedMs: 0,
+    }));
+    const original = editor.innerHTML;
+    await install(run, undefined, {
+      ...defaultSettings,
+      inputPrefixKey: ";",
+      inputTrailingKey: ".",
+    }).translateInput(".");
+    expect(run.mock.calls[0]?.[0]).toMatchObject({ targetLanguage: "ja" });
+    expect(run.mock.calls[0]?.[0].text).not.toMatch(/Keep|。。。/u);
+    expect(editor.innerHTML).toBe("<b>Keep</b> <em>おはようございます。</em>");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.innerHTML).toBe(original);
+  });
   it("uses the opt-in page language but keeps the saved target when it matches the draft", async () => {
     document.body.innerHTML =
       "<main><p>Texte de la page.</p><textarea></textarea></main>";

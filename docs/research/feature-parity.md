@@ -84,7 +84,9 @@ The artifact enables site-specific context detection by default on YouTube, X, T
 
 The packaged desktop bar prefers the top edge of the editor with a 6 px gap, flips below near the viewport top and clamps at viewport edges. Yaku anchors the existing result actions using the Floating UI version already resolved by Base UI. Position updates follow scrolling, resize and layout shifts while the bar is mounted. The translated text stays in the editor and remains available to assistive technology and result actions. Editing or clicking away dismisses the bar. [Floating UI positioning lifecycle](https://floating-ui.com/docs/autoupdate)
 
-Live platform checks, the reference bar's collapsed and timed states, configurable delimiters and mobile timing remain open.
+The packaged options offer slash, equals, semicolon, comma, period and colon for both key roles, plus Space for the trailing key and None for the prefix. Yaku prevents assigning the same punctuation to both roles and supports the packaged full-width punctuation aliases. A trusted sequence at the end of the editor removes exactly the three trigger characters from the model request and restores them on undo. The default remains slash and Space. The gesture uses a 200 ms interval on desktop and the artifact's 300 ms interval when Chrome reports a coarse primary pointer.
+
+Live platform checks, physical mobile input timing and the reference bar's collapsed and timed states remain open.
 
 ## Document and file matrix
 

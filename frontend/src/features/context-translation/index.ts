@@ -6,7 +6,12 @@ import {
   offset,
   shift,
 } from "@floating-ui/dom";
-import type { Settings } from "../../entities/settings";
+import {
+  inputKeyCharacters,
+  inputTriggerPresses,
+  type InputTrailingKey,
+  type Settings,
+} from "../../entities/settings";
 import type { Translate } from "../../entities/translation";
 import { copy } from "../../shared/i18n";
 import { languages } from "../../shared/languages";
@@ -89,43 +94,56 @@ export function installContextTranslation(options: {
     | undefined;
   const abort = new AbortController();
   const signal = abort.signal;
-  let spaces: { editor: HTMLElement; count: number; time: number } | undefined;
-  let repeatingSpace = false;
+  let trailingSequence:
+    | {
+        editor: HTMLElement;
+        key: InputTrailingKey;
+        count: number;
+        time: number;
+      }
+    | undefined;
+  let repeatingKey = false;
   const editors = createEditorTracker(document, signal, (element, event) => {
     if (element === inputEditor && requestId) close();
     if (event.type === "beforeinput") return;
     if (element === resultEditor) close();
     const settings = getSettings();
+    const key = settings.inputTrailingKey;
     if (
       !(event instanceof view.InputEvent) ||
       !event.isTrusted ||
       event.isComposing ||
       event.inputType !== "insertText" ||
-      event.data !== " " ||
-      repeatingSpace ||
+      !event.data ||
+      event.data.length !== 1 ||
+      !inputKeyCharacters(key).includes(event.data) ||
+      repeatingKey ||
       !settings.inputEnabled ||
       !settings.inputSpaceTrigger ||
       !editors.caretAtEnd(element)
     ) {
-      spaces = undefined;
+      trailingSequence = undefined;
       return;
     }
+    const interval = view.matchMedia("(pointer: coarse)").matches ? 300 : 200;
     const count =
-      spaces?.editor === element && event.timeStamp - spaces.time <= 200
-        ? spaces.count + 1
+      trailingSequence?.editor === element &&
+      trailingSequence.key === key &&
+      event.timeStamp - trailingSequence.time <= interval
+        ? trailingSequence.count + 1
         : 1;
-    spaces = { editor: element, count, time: event.timeStamp };
-    if (count !== 3) return;
-    spaces = undefined;
+    trailingSequence = { editor: element, key, count, time: event.timeStamp };
+    if (count !== inputTriggerPresses) return;
+    trailingSequence = undefined;
     if (editors.activeEditor() === element)
-      void translateInput(true).catch(onError);
+      void translateInput(key).catch(onError);
   });
   for (const type of ["focusout", "pointerdown", "keyup"] as const)
     document.addEventListener(
       type,
       (event) => {
-        repeatingSpace = false;
-        if (type !== "keyup") spaces = undefined;
+        repeatingKey = false;
+        if (type !== "keyup") trailingSequence = undefined;
         if (
           type === "pointerdown" &&
           resultEditor &&
@@ -139,8 +157,11 @@ export function installContextTranslation(options: {
     "keydown",
     (event) => {
       if (!event.isTrusted) return;
-      repeatingSpace = event.key === " " && event.repeat;
-      if (event.key !== " " || repeatingSpace) spaces = undefined;
+      const matches =
+        event.key.length === 1 &&
+        inputKeyCharacters(getSettings().inputTrailingKey).includes(event.key);
+      repeatingKey = matches && event.repeat;
+      if (!matches || repeatingKey) trailingSequence = undefined;
     },
     { capture: true, signal },
   );
@@ -485,20 +506,20 @@ export function installContextTranslation(options: {
     },
     { signal },
   );
-  async function translateInput(spaceTriggered = false) {
-    if (!getSettings().inputEnabled) return;
+  async function translateInput(trailing?: InputTrailingKey) {
+    const settings = getSettings();
+    if (!settings.inputEnabled) return;
     const element = editors.activeEditor();
     if (!element || !allowed(element, true)) return;
     let snapshot: ReturnType<typeof editors.capture>;
     try {
-      snapshot = editors.capture(element);
+      snapshot = editors.capture(element, settings.inputPrefixKey, trailing);
     } catch (error) {
       show(error instanceof Error ? error.message : String(error));
       onError(error);
       return;
     }
     if (!snapshot?.text.trim()) return;
-    const settings = getSettings();
     let target = snapshot.targetLanguage ?? settings.inputTargetLanguage;
     if (!snapshot.hasDirective && detectLanguage) {
       const conversation = settings.inputMatchConversation
@@ -548,11 +569,7 @@ export function installContextTranslation(options: {
         if (inferred && inferred !== draftLanguage) target = inferred;
       }
     }
-    await translateInputSnapshot(
-      snapshot,
-      spaceTriggered ? snapshot.text.trimEnd() : snapshot.text,
-      target,
-    );
+    await translateInputSnapshot(snapshot, snapshot.text, target);
   }
   async function translateInputSnapshot(
     snapshot: NonNullable<ReturnType<typeof editors.capture>>,

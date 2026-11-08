@@ -1,5 +1,6 @@
 import {
   defaultSettings,
+  inputPunctuation,
   validReadingColor,
   validGlossaryUrlPattern,
   validSourceLanguage,
@@ -91,6 +92,9 @@ export function validateSettings(value: unknown): Settings {
   if (
     !codes.has(result.targetLanguage) ||
     !codes.has(result.inputTargetLanguage) ||
+    ![...inputPunctuation, "none"].includes(result.inputPrefixKey) ||
+    ![...inputPunctuation, "space"].includes(result.inputTrailingKey) ||
+    result.inputPrefixKey === (result.inputTrailingKey as string) ||
     !(result.sourceLanguage === "auto" || codes.has(result.sourceLanguage)) ||
     !["bilingual", "translation"].includes(result.mode) ||
     !["plain", "underline", "highlight", "quote", "blur"].includes(

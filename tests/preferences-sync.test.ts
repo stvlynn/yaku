@@ -108,6 +108,8 @@ describe("browser preference sync", () => {
   it("loads a version 3 snapshot written before the Space trigger preference", () => {
     const {
       inputSpaceTrigger: _trigger,
+      inputPrefixKey: _prefix,
+      inputTrailingKey: _trailing,
       inputTargetLanguage: _inputLanguage,
       inputMatchConversation: _matchConversation,
       inputMatchPage: _matchPage,

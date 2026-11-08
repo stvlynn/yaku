@@ -176,6 +176,8 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
             hoverEnabled: true,
             selectionEnabled: true,
             inputEnabled: true,
+            inputPrefixKey: "/",
+            inputTrailingKey: "space",
             inputTargetLanguage: "zh",
             autoTranslate: false,
             mode: "bilingual",
@@ -489,6 +491,26 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       await reply.fill("// Good morning.");
       await sendFixture(bridge, conversation, "translate-input");
       await expect(reply).toHaveValue(/早/u, { timeout: 180000 });
+      const originalInputKeys = await bridge.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        const settings = stored.settings as Settings;
+        await chrome.storage.local.set({
+          settings: { ...settings, inputPrefixKey: ";", inputTrailingKey: "=" },
+        });
+        return settings;
+      });
+      await conversation.reload();
+      await expect(conversation.locator("[data-yaku-floating]")).toBeVisible();
+      await reply.fill("Keep ;ja Good morning.");
+      await conversation.keyboard.type("===");
+      await expect(reply).toHaveValue(/^Keep .*おはよう/u, { timeout: 180000 });
+      evidence.customInputKeys = await reply.inputValue();
+      await clickContextButton(conversation, "Undo translation");
+      await expect(reply).toHaveValue("Keep ;ja Good morning.===");
+      await bridge.evaluate(
+        (settings) => chrome.storage.local.set({ settings }),
+        originalInputKeys,
+      );
       await conversation.close();
       await page.bringToFront();
       await page.locator("#pick").evaluate((element) => {
