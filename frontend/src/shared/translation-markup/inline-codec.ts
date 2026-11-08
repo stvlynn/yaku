@@ -56,6 +56,9 @@ export function createInlineCodec(
   const selected = new Set<Node>(nodes);
   const markers = new Map<number, Marker>();
   const preservation = options.documentPreservation;
+  const projectionBaseUrl = preservation
+    ? new URL(preservation.baseUrl)
+    : undefined;
   const sourceMetadata = (node: Node) => {
     let language: string | undefined;
     let direction: string | undefined;
@@ -264,10 +267,10 @@ export function createInlineCodec(
       if (attribute === "href") {
         let protocol: string;
         try {
-          protocol = new URL(value, preservation?.baseUrl ?? document.baseURI)
+          protocol = new URL(value, projectionBaseUrl ?? document.baseURI)
             .protocol;
         } catch {
-          throw new Error(invalidMarkers);
+          continue;
         }
         if (!["http:", "https:", "mailto:", "tel:"].includes(protocol))
           continue;

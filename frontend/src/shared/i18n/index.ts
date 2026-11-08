@@ -1,4 +1,8 @@
 export const copy = {
+  moreReadingControls: "More reading controls",
+  readingControls: "Reading controls",
+  temporaryEditing: "Temporary editing",
+  temporaryEditingOn: "Temporary editing on",
   chooseSubtitleTrack: "Choose captions",
   subtitleSelectTrack: "Choose captions to continue.",
   subtitleTrackLoadError: "The selected captions could not be loaded.",
@@ -368,6 +372,12 @@ export const copy = {
     bo: "Tibetan",
   } as Record<string, string>,
 } as const;
+
+export function readingControlsLabel(editing: boolean) {
+  return editing
+    ? `${copy.moreReadingControls} · ${copy.temporaryEditingOn}`
+    : copy.moreReadingControls;
+}
 
 export function subtitleTrackLabel(index: number) {
   return `Track ${index}`;

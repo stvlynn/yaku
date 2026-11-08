@@ -23,6 +23,37 @@ const policy = {
   documentPreservation: { baseUrl: "https://book.invalid/OPS/chapter.xhtml" },
 };
 describe("document marker preservation", () => {
+  it("keeps an invalid document base configuration distinct from a malformed original href", () => {
+    const doc = xml('<p>Read <a href="../report.xhtml">the report</a>.</p>');
+    const block = doc.querySelector("p")!;
+    expect(() =>
+      createInlineCodec(doc, block, selected(block), {
+        documentPreservation: { baseUrl: "not an absolute base" },
+      }),
+    ).toThrow();
+  });
+  it.each(["default", "document"])(
+    "drops a malformed original link URL without rejecting valid translated markers in %s projection",
+    (mode) => {
+      const doc = xml('<p>Read <a href="http://[invalid">the report</a>.</p>');
+      const block = doc.querySelector("p")!;
+      const codec = createInlineCodec(
+        doc,
+        block,
+        selected(block),
+        mode === "document" ? policy : undefined,
+      );
+      const fragment = codec.decode(
+        '閱讀<yaku-link id="0">報告</yaku-link>。',
+        mode === "document" ? { mode: "bilingual" } : undefined,
+      );
+      expect(fragment.querySelector("a")?.getAttribute("href")).toBeNull();
+      expect(fragment.textContent).toBe("閱讀報告。");
+      expect(doc.querySelector("a")?.getAttribute("href")).toBe(
+        "http://[invalid",
+      );
+    },
+  );
   it("snapshots inherited and explicit protected source language/direction before target metadata changes", () => {
     const doc = xml(
       '<section xml:lang="en" dir="ltr"><p>Run <code lang="de" dir="rtl">Gift</code> with <math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>.</p></section>',

@@ -110,6 +110,7 @@ export default defineContentScript({
         }),
     });
     let manualRevision = 0;
+    let editingRevision = 0;
     async function translateManually(wholePage = false) {
       manualRevision++;
       void page.translatePage({ wholePage }).catch(onError);
@@ -208,6 +209,14 @@ export default defineContentScript({
               return;
             case "page-state":
               return page.isActive();
+            case "page-editing-state":
+              return page.isEditing();
+            case "set-page-editing":
+              if (typeof message.payload !== "boolean")
+                throw new TypeError("Expected an editing state.");
+              editingRevision++;
+              page.setEditing(message.payload);
+              return page.isEditing();
             default:
               throw new Error("Unknown page request.");
           }
@@ -222,6 +231,21 @@ export default defineContentScript({
         return true;
       },
     );
+    if (window.top !== window) {
+      const revision = editingRevision;
+      void request<boolean | null>({
+        destination: "background",
+        action: "inherit-page-editing",
+      }).then(
+        (enabled) => {
+          if (revision === editingRevision && enabled !== null)
+            page.setEditing(enabled);
+        },
+        (error) => {
+          if (revision === editingRevision) onError(error);
+        },
+      );
+    }
     const rule = settings.siteRules.find(
       (item) =>
         location.hostname === item.hostname ||
@@ -263,6 +287,7 @@ export default defineContentScript({
     })().catch(onError);
     ctx.onInvalidated(() => {
       manualRevision++;
+      editingRevision++;
       remove();
       context.dispose();
       page.dispose();

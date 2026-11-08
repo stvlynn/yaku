@@ -12,6 +12,7 @@ Implementation starts from shipped behavior, primary documentation, and reproduc
 - [Design system](design-system.md): design sources and user journeys.
 - [Translation policy](translation-policy.md): source-language rules, temporary-domain precedence and implementation contract.
 - [Translation editing and comparison](translation-editing.md): temporary editing, contextual comparison and version-specific sharing evidence.
+- [Article context](article-context.md): source acquisition, generated context and terminology, paired baselines and the model ablation plan.
 - [Chinese script variants](chinese-variants.md): read-only OpenCC candidate, licensing, measured payload and normalization evaluation plan.
 - [Evidence ledger](evidence-ledger.md): REA identities and coverage.
 

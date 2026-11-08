@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   defaultSettings,
   resolveGlossary,
@@ -51,6 +51,11 @@ export function useExtensionController(surface: Surface) {
   }>();
   const [copied, setCopied] = useState(false);
   const [translated, setTranslated] = useState(false);
+  const [temporaryEditing, setTemporaryEditing] = useState<boolean>();
+  const [temporaryEditingPending, setTemporaryEditingPending] = useState(false);
+  const editingRevision = useRef(0);
+  const editingMutation = useRef(false);
+  const editingError = useRef<string | undefined>(undefined);
   const [temporaryTranslation, setTemporaryTranslation] =
     useState<TemporaryTranslation | null>(null);
   const [fileBusy, setFileBusy] = useState(false);
@@ -81,6 +86,88 @@ export function useExtensionController(surface: Surface) {
       }),
     );
   }
+  async function readEditingState(tabId: number): Promise<boolean> {
+    const reply = await chrome.tabs.sendMessage(
+      tabId,
+      { destination: "content", action: "page-editing-state" },
+      { frameId: 0 },
+    );
+    if (!reply?.ok || typeof reply.value !== "boolean")
+      throw new Error(reply?.error ?? copy.pageUnavailable);
+    return reply.value;
+  }
+  function clearEditingError() {
+    const previous = editingError.current;
+    editingError.current = undefined;
+    if (previous) setError((value) => (value === previous ? undefined : value));
+  }
+  async function refreshEditing(tabId?: number) {
+    if (editingMutation.current) return;
+    const revision = ++editingRevision.current;
+    try {
+      const id =
+        tabId ??
+        (
+          await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+          })
+        )[0]?.id;
+      if (id === undefined) throw new Error(copy.noActivePage);
+      const value = await readEditingState(id);
+      if (revision === editingRevision.current) {
+        setTemporaryEditing(value);
+        clearEditingError();
+      }
+    } catch (failure) {
+      if (revision === editingRevision.current) {
+        setTemporaryEditing(undefined);
+        editingError.current = describeError(failure);
+        setError(editingError.current);
+      }
+    }
+  }
+  async function changeEditing(enabled: boolean) {
+    if (editingMutation.current) return;
+    editingMutation.current = true;
+    const revision = ++editingRevision.current;
+    setTemporaryEditingPending(true);
+    setError(undefined);
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      if (tab?.id === undefined) throw new Error(copy.noActivePage);
+      const reply = await chrome.tabs.sendMessage(tab.id, {
+        destination: "content",
+        action: "set-page-editing",
+        payload: enabled,
+      });
+      if (!reply?.ok) throw new Error(reply?.error ?? copy.pageUnavailable);
+      const value = await readEditingState(tab.id);
+      if (revision === editingRevision.current) {
+        setTemporaryEditing(value);
+        clearEditingError();
+      }
+    } catch (failure) {
+      if (revision === editingRevision.current) {
+        setTemporaryEditing(undefined);
+        editingError.current = describeError(failure);
+        setError(editingError.current);
+      }
+    } finally {
+      editingMutation.current = false;
+      if (revision === editingRevision.current)
+        setTemporaryEditingPending(false);
+    }
+  }
+  useEffect(
+    () => () => {
+      editingRevision.current++;
+    },
+    [],
+  );
   useEffect(() => () => fileController?.abort(), [fileController]);
   const translationSettings = JSON.stringify([
     preferences.sourceLanguage,
@@ -115,6 +202,7 @@ export function useExtensionController(surface: Surface) {
           { frameId: 0 },
         );
         if (reply?.ok) setTranslated(Boolean(reply.value));
+        await refreshEditing(tab.id);
         await refreshTemporaryTranslation(tab.id);
       })
       .catch(() => setError(copy.pageUnavailable));
@@ -362,6 +450,11 @@ export function useExtensionController(surface: Surface) {
     popup: {
       ...props,
       pageTranslated: translated,
+      temporaryEditing,
+      temporaryEditingPending,
+      onTemporaryEditingChange: (enabled: boolean) =>
+        void changeEditing(enabled),
+      onReadingControlsOpen: () => void refreshEditing(),
       temporaryTranslationUntil: temporaryTranslation?.expiresAt,
       onStopTemporaryTranslation: () => void stopTemporaryTranslation(),
       onTranslatePage: () => void pageAction("translate-page"),

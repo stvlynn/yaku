@@ -22,7 +22,7 @@ The native PDF download test produced a two-page PDF with the source page's exac
 
 ## Current integrated checkpoint
 
-- The integrated build passes strict TypeScript, import boundaries, formatting and 196 unit tests. OPFS allocation/write failures and lifecycle serialization have controlled regression coverage; physical disk exhaustion has not been simulated.
+- The integrated build passes strict TypeScript, import boundaries, formatting and 205 unit tests. OPFS allocation/write failures and lifecycle serialization have controlled regression coverage; physical disk exhaustion has not been simulated.
 - Protected-PDF missing/incorrect/correct password journeys and real translated PDF export passed. Passwords were absent from extension storage after the test.
 - Real Chrome React-preserving page rendering, context/editor interactions and lazy-image batches passed with the actual executing background source checked. Offline unload/queued translation and offscreen recreation completed without HTTP requests.
 - Ten non-model browser cases passed for settings, scoped glossaries, appearance, v3 sync, source-language rules, temporary website activation and the native action popup. Three model-dependent cases were explicitly skipped in that suite; separate real-model experiments cover their recorded workflows. Native popup Stop removed its activation without restoring the current reading page.
@@ -31,7 +31,8 @@ The native PDF download test produced a two-page PDF with the source page's exac
 - HTML and EPUB each passed real-model replacement and bilingual exports. Checks retained relative links, code/formulas, unique IDs, one original image and target/source language metadata; Workspace previews contained plain translated text. Production import/export did not execute source scripts or fetch their resources.
 - Native external-caption acquisition passed with real HY-MT2 on ordinary HTTP: a disabled French track loaded on explicit request and returned to disabled, a native English choice overrode the global French preference, and the production picker kept two active tracks separate without overwriting their modes. The separate picker probe covered keyboard/focus, cancellation, narrow dark layout and fullscreen video.
 - Ordinary HTTP installed-content tests exercised page, selection, input and native-caption request creation with controlled translation responses. All request IDs used the HTTP-compatible CSPRNG path; no page exceptions occurred. This isolation test is separate from the actual-model native-caption result.
-- WXT produced the 26.86 MB Chrome archive from the 79.97 MB unpacked build, without model weights. Packaging retained the accepted background and content script bytes and includes the dependency license files.
+- Temporary editing passed native Popup/frame/session integration and a real HY-MT2 paragraph editing, undo/redo, source-preservation and switch-off journey. A separate source probe covered native rich-clipboard paste, browser composition events, caret retention across appearance changes and exact source restoration. Reference 1.34.2 was also exercised in an isolated profile with genuine provider translations; its source-containing editable containers are documented separately from Yaku's source-preserving design.
+- WXT produced the 26.87 MB Chrome archive from the 80.00 MB unpacked build, without model weights. Packaging retained the accepted background/content bytes and dependency licenses.
 
 ## Acceptance still in progress
 

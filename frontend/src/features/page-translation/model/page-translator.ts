@@ -6,6 +6,7 @@ import type { Translate, TranslationMode } from "../../../entities/translation";
 import { alreadyTargetLanguage, reliableLanguageObservation } from "./language";
 import { createInlineCodec } from "../../../shared/translation-markup";
 import { createRequestId } from "../../../shared/request-id";
+import { copy } from "../../../shared/i18n";
 import {
   collectOpenRoots,
   composedParent,
@@ -102,6 +103,7 @@ export function createPageTranslator({
   const observationRoots = new Set<TranslationRoot>();
   let generation = 0;
   let active = false;
+  let editing = false;
   let disposed = false;
   let mode: TranslationMode | undefined;
   let scope: Element | null = null;
@@ -269,15 +271,43 @@ export function createPageTranslator({
       if (settings.textColor) entry.target.style.color = settings.textColor;
       if (settings.backgroundColor)
         entry.target.style.backgroundColor = settings.backgroundColor;
-      if (settings.translationPosition === "before")
-        entry.block.prepend(entry.target);
-      else entry.block.append(entry.target);
+      if (settings.translationPosition === "before") {
+        if (entry.block.firstChild !== entry.target)
+          entry.block.prepend(entry.target);
+      } else if (entry.block.lastChild !== entry.target)
+        entry.block.append(entry.target);
+      if (editing) {
+        entry.target.setAttribute("contenteditable", "plaintext-only");
+        entry.target.setAttribute("role", "textbox");
+        entry.target.setAttribute("aria-label", copy.resultText);
+        entry.target.setAttribute("aria-multiline", "true");
+        entry.target.setAttribute("tabindex", "0");
+        entry.target.dataset.yakuEditing = "true";
+      } else {
+        for (const attribute of [
+          "contenteditable",
+          "role",
+          "aria-label",
+          "aria-multiline",
+          "tabindex",
+          "data-yaku-editing",
+        ])
+          entry.target.removeAttribute(attribute);
+      }
+      for (const element of entry.target.querySelectorAll(
+        "code,pre,kbd,samp,math,svg",
+      )) {
+        if (editing) element.setAttribute("contenteditable", "false");
+        else element.removeAttribute("contenteditable");
+      }
       if (settings.style === "blur") {
+        if (editing) entry.target.style.filter = "none";
         entry.target.onpointerenter = () => {
           if (entry.target) entry.target.style.filter = "none";
         };
         entry.target.onpointerleave = () => {
-          if (entry.target) entry.target.style.filter = "blur(0.24em)";
+          if (entry.target && !editing)
+            entry.target.style.filter = "blur(0.24em)";
         };
       } else {
         entry.target.onpointerenter = null;
@@ -399,6 +429,15 @@ export function createPageTranslator({
       target.lang = settings.targetLanguage;
       target.dir = "auto";
       target.append(codec.decode(result.text));
+      target.addEventListener("click", (event) => {
+        if (!editing) return;
+        event.stopPropagation();
+        const element =
+          event.target instanceof view.Element
+            ? event.target
+            : (event.target as Node | null)?.parentElement;
+        if (element?.closest("a")) event.preventDefault();
+      });
       mutate(() => {
         entry.block.append(target);
         entry.target = target;
@@ -576,6 +615,12 @@ export function createPageTranslator({
 
   const controller = {
     isActive: () => active,
+    isEditing: () => editing,
+    setEditing(enabled: boolean) {
+      if (disposed) return;
+      editing = enabled;
+      for (const entry of entries.values()) refreshStyle(entry);
+    },
     async translatePage({
       wholePage = false,
     }: { wholePage?: boolean } = {}): Promise<void> {
@@ -632,6 +677,7 @@ export function createPageTranslator({
       for (const entry of entries.values()) refreshStyle(entry);
     },
     dispose() {
+      editing = false;
       restore();
       disposed = true;
       lifecycle.abort();

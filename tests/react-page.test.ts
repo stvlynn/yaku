@@ -55,6 +55,7 @@ describe("React-owned source text", () => {
         }),
       });
       try {
+        controller.setEditing(true);
         await act(async () => controller.translatePage({ wholePage: true }));
         expect(text.parentNode).toBe(paragraph);
         await act(async () => root.render(view(false)));

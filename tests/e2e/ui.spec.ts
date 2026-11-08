@@ -408,6 +408,8 @@ test("popup Restore remains actionable in controlled busy states while new Trans
       value: async (_id: number, message: { action: string }) => {
         if (message.action === "page-state")
           return { ok: true, value: translated };
+        if (message.action === "page-editing-state")
+          return { ok: true, value: false };
         actions.push(message.action);
         if (message.action === "restore-page") translated = false;
         return { ok: true, value: undefined };

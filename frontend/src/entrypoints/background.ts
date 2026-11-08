@@ -231,6 +231,28 @@ export default defineBackground(() => {
         if (!reply?.ok) throw new Error(reply?.error ?? copy.pageUnavailable);
         return null;
       }
+      if (message.action === "inherit-page-editing") {
+        if (sender.tab?.id === undefined || sender.frameId === 0)
+          throw new Error(copy.pageUnavailable);
+        try {
+          const reply = await chrome.tabs.sendMessage(
+            sender.tab.id,
+            { destination: "content", action: "page-editing-state" },
+            { frameId: 0 },
+          );
+          if (!reply?.ok || typeof reply.value !== "boolean")
+            throw new Error(reply?.error ?? copy.pageUnavailable);
+          return reply.value;
+        } catch (error) {
+          // A child can initialize before the top document's content script.
+          if (
+            error instanceof Error &&
+            error.message.includes("Receiving end does not exist")
+          )
+            return null;
+          throw error;
+        }
+      }
       if (message.action === "page-error" && sender.tab?.id !== undefined) {
         return chrome.tabs.sendMessage(
           sender.tab.id,
