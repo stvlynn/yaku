@@ -242,7 +242,8 @@ export const copy = {
   hover: "Translate on hover",
   hoverHelp: "Hold Alt while hovering over a paragraph.",
   input: "Translate while writing",
-  inputHelp: "Offer translation in editable text fields.",
+  inputHelp:
+    "Translate editable text. Use // before the part to translate, or /ja to choose Japanese.",
   subtitles: "Bilingual subtitles",
   subtitlesHelp: "Translate supported video captions alongside the original.",
   floating: "Floating page control",

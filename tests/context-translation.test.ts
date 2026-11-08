@@ -57,6 +57,51 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it("translates only the suffix and restores the exact native value on undo", async () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    const editor = document.querySelector("textarea")!;
+    const original = "Keep https://example.test/hello. // /ja Good morning";
+    editor.value = original;
+    editor.focus();
+    const run = vi.fn<Translate>(async (request) => ({
+      id: request.id,
+      text: "おはようございます",
+      elapsedMs: 0,
+    }));
+    await install(run).translateInput();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      text: "Good morning",
+      targetLanguage: "ja",
+    });
+    expect(editor.value).toBe(
+      "Keep https://example.test/hello. // おはようございます",
+    );
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.value).toBe(original);
+  });
+  it("retains rich prefix formatting and keeps the original nodes for undo", async () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><b>Keep</b> // <em>Good morning</em></div>';
+    const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+    const original = editor.innerHTML;
+    const bold = editor.firstChild;
+    editor.focus();
+    const run = vi.fn<Translate>(async (request) => ({
+      id: request.id,
+      text: request.text.replace("Good morning", "早上好"),
+      elapsedMs: 0,
+    }));
+    await install(run).translateInput();
+    expect(run.mock.calls[0]?.[0].text).not.toContain("Keep");
+    expect(editor.innerHTML).toBe("<b>Keep</b> <em>早上好</em>");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.innerHTML).toBe(original);
+    expect(editor.firstChild).toBe(bold);
+  });
   it.each(["input", "selection"])(
     "preserves declared source language and rejects a stale %s result after it changes",
     async (kind) => {

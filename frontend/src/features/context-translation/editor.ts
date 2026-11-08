@@ -3,6 +3,7 @@ import {
   createInlineCodec,
 } from "../../shared/translation-markup";
 import { contextErrors } from "./config";
+import { languages } from "../../shared/languages";
 
 type Editor = HTMLInputElement | HTMLTextAreaElement | HTMLElement;
 type Snapshot = {
@@ -19,7 +20,28 @@ type Snapshot = {
   };
   range?: Range;
   codec?: ReturnType<typeof createInlineCodec>;
+  prefix?: string | DocumentFragment;
+  targetLanguage?: string;
 };
+
+function inputDirective(text: string) {
+  const matches = [
+    ...text.matchAll(
+      /(?<!\S)\/\/\s*|(?<!\S)\/([a-z]{2,3}(?:-[a-z]+)?)(?=\s)\s*/giu,
+    ),
+  ];
+  for (const match of matches.reverse()) {
+    const targetLanguage =
+      match[1] &&
+      languages.find(
+        ([code]) => code.toLowerCase() === match[1]!.toLowerCase(),
+      )?.[0];
+    if (match[1] && !targetLanguage) continue;
+    const start = match.index!;
+    const end = match.index! + match[0].length;
+    return { start, end, targetLanguage: targetLanguage || undefined };
+  }
+}
 
 export function createEditorTracker(
   document: Document,
@@ -115,6 +137,8 @@ export function createEditorTracker(
       version: versions.get(element) ?? 0,
       originalNodes: native ? [] : [...element.childNodes],
     };
+    const directive = inputDirective(snapshot.text);
+    if (directive) snapshot.targetLanguage = directive.targetLanguage;
     if (native)
       snapshot.selection = {
         start: element.selectionStart ?? 0,
@@ -128,11 +152,31 @@ export function createEditorTracker(
         )
       )
         throw new Error(contextErrors.protectedEditor);
-      const walker = document.createTreeWalker(element, 4);
+      let translationRoot = element;
+      if (directive) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const point = (offset: number): [Node, number] => {
+          const walker = document.createTreeWalker(element, 4);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const length = (node as Text).length;
+            if (offset <= length) return [node, offset];
+            offset -= length;
+          }
+          return [element, element.childNodes.length];
+        };
+        range.setEnd(...point(directive.start));
+        snapshot.prefix = range.cloneContents();
+        range.selectNodeContents(element);
+        range.setStart(...point(directive.end));
+        translationRoot = document.createElement("div");
+        translationRoot.append(range.cloneContents());
+      }
+      const walker = document.createTreeWalker(translationRoot, 4);
       const nodes: Text[] = [];
       for (let node = walker.nextNode(); node; node = walker.nextNode())
         nodes.push(node as Text);
-      snapshot.codec = createInlineCodec(document, element, nodes, {
+      snapshot.codec = createInlineCodec(document, translationRoot, nodes, {
         preserveBlocks: true,
         preserveProtected: true,
       });
@@ -143,6 +187,10 @@ export function createEditorTracker(
         element.contains(selection.getRangeAt(0).commonAncestorContainer)
       )
         snapshot.range = selection.getRangeAt(0).cloneRange();
+    }
+    if (native && directive) {
+      snapshot.prefix = snapshot.text.slice(0, directive.start);
+      snapshot.text = snapshot.text.slice(directive.end);
     }
     return snapshot;
   }
@@ -188,7 +236,14 @@ export function createEditorTracker(
       !current(snapshot)
     )
       return;
-    if (snapshot.native) nativeValue(element, translated);
+    if (snapshot.native)
+      nativeValue(
+        element,
+        (typeof snapshot.prefix === "string" ? snapshot.prefix : "") +
+          translated,
+      );
+    else if (snapshot.prefix && typeof snapshot.prefix !== "string")
+      element.replaceChildren(snapshot.prefix, fragment!);
     else element.replaceChildren(fragment!);
     const appliedSignature = signature(element);
     emit(element, "input", "insertReplacementText", plain);
@@ -205,7 +260,7 @@ export function createEditorTracker(
         !canUndo()
       )
         return false;
-      if (snapshot.native) nativeValue(element, snapshot.text);
+      if (snapshot.native) nativeValue(element, snapshot.signature);
       else element.replaceChildren(...snapshot.originalNodes);
       emit(element, "input", "historyUndo", null);
       element.focus({ preventScroll: true });

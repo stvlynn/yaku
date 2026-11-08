@@ -70,6 +70,10 @@ Observed settings families:
 
 Observed theme identifiers (labels are summarized, not artwork): none, grey, dashed, dotted, dashedBorder, solidBorder, underline, mask, opacity, paper, dividingLine, highlight, marker, marker2, blockquote, weakening, italic, bold, thinDashed, nativeDashed, nativeDotted, nativeUnderline, wavy, background. Localization has a few duplicate labels; identifier presence does not prove every theme is exposed together.
 
+## Input directives
+
+The supplied input defaults name `/` as the starting key and Space as the trailing key, with three repetitions. English locale descriptions distinguish `//` for a suffix and `/ja` for a target-language override. Yaku accepts those directives through its existing input-translation command and context action. It uses the last recognized directive at a whitespace boundary, which keeps slashes inside URLs out of the directive parser. Native values and rich prefixes are retained around the translated suffix, and undo restores the full original value or original rich nodes. Repeated-Space triggering, configurable delimiters and the target language bar are separate interaction gaps.
+
 ## Document and file matrix
 
 | Format/workflow | Static evidence | Observed advertised operations | Unknown / verification needed |

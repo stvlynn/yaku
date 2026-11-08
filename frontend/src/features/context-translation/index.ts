@@ -375,6 +375,7 @@ export function installContextTranslation(options: {
     }
     if (!snapshot?.text.trim()) return;
     const settings = getSettings();
+    const targetLanguage = snapshot.targetLanguage ?? settings.targetLanguage;
     const settingsKey = requestSettingsKey(settings);
     show(copy.translating, false, true);
     const revision = generation;
@@ -388,7 +389,7 @@ export function installContextTranslation(options: {
         text: snapshot.text,
         sourceLanguage: settings.sourceLanguage,
         context: snapshot.codec?.instruction,
-        targetLanguage: settings.targetLanguage,
+        targetLanguage,
         glossary: settings.glossary,
       });
     } catch (error) {
@@ -419,7 +420,7 @@ export function installContextTranslation(options: {
       close();
       return;
     }
-    show(transaction.text, false, false, settings.targetLanguage);
+    show(transaction.text, false, false, targetLanguage);
     const undo = document.createElement("button");
     undo.textContent = copy.undoInput;
     undo.onclick = () => {

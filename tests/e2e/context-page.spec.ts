@@ -305,6 +305,16 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       evidence.inputTranslation = await input.inputValue();
       await clickContextButton(page, "Undo translation");
       expect(await input.inputValue()).toBe("Hello friend.");
+      const suffixSource = "Keep https://example.test/info. /ja Good morning.";
+      await input.fill(suffixSource);
+      await send("translate-input");
+      await expect(input).toHaveValue(
+        /^Keep https:\/\/example\.test\/info\. .*おはよう/u,
+        { timeout: 180000 },
+      );
+      evidence.inputSuffix = await input.inputValue();
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue(suffixSource);
       await inputCdp.detach();
       const rich = page.locator("#rich");
       const originalRich = await rich.innerHTML();
