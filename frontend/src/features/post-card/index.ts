@@ -48,7 +48,11 @@ export async function previewPostCard(
       measure: (line) => ctx.measureText(line).width,
     }),
   );
-  const height = 170 + lines.reduce((sum, block) => sum + block.length * 42, 0);
+  const qr = encode(permalink, { border: 4, ecc: "M" }).data;
+  const moduleSize = 4;
+  const qrSize = qr.length * moduleSize;
+  const height =
+    170 + qrSize + lines.reduce((sum, block) => sum + block.length * 42, 0);
   canvas.width = width;
   canvas.height = height;
   ctx.fillStyle = "#faf8f3";
@@ -79,7 +83,23 @@ export async function previewPostCard(
   ctx.direction = "ltr";
   ctx.font = "18px system-ui";
   ctx.fillStyle = "#59534a";
-  ctx.fillText(permalink, margin, height - 24, width - margin * 2);
+  const qrX = width - margin - qrSize;
+  const qrY = height - margin - qrSize;
+  ctx.fillText(permalink, margin, qrY + qrSize / 2, qrX - margin * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(qrX, qrY, qrSize, qrSize);
+  ctx.fillStyle = "#000";
+  for (const [row, modules] of qr.entries()) {
+    for (const [column, dark] of modules.entries()) {
+      if (dark)
+        ctx.fillRect(
+          qrX + column * moduleSize,
+          qrY + row * moduleSize,
+          moduleSize,
+          moduleSize,
+        );
+    }
+  }
   const png = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, "image/png"),
   );
@@ -114,8 +134,31 @@ export async function previewPostCard(
     link.download = `post-${id}.png`;
     link.click();
   };
-  footer.append(close, save);
-  dialog.append(canvas, footer);
+  footer.append(close);
+  const file = new File([png], `post-${id}.png`, { type: "image/png" });
+  const navigator = document.defaultView?.navigator;
+  const shareData = { files: [file] };
+  const notice = document.createElement("p");
+  notice.setAttribute("role", "status");
+  if (navigator?.share && navigator.canShare?.(shareData)) {
+    const share = document.createElement("button");
+    share.textContent = copy.sharePostCard;
+    share.onclick = async () => {
+      share.disabled = true;
+      notice.textContent = "";
+      try {
+        await navigator.share(shareData);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError"))
+          notice.textContent = copy.sharePostCardFailed;
+      } finally {
+        share.disabled = false;
+      }
+    };
+    footer.append(share);
+  }
+  footer.append(save);
+  dialog.append(canvas, notice, footer);
   root.append(style, dialog);
   dialog.addEventListener(
     "close",
@@ -128,3 +171,4 @@ export async function previewPostCard(
   document.documentElement.append(host);
   dialog.showModal();
 }
+import { encode } from "uqr";

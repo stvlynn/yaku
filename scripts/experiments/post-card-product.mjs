@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { expect } from "@playwright/test";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import jsQR from "jsqr";
 import { mkdir, readFile } from "node:fs/promises";
 import { launchExtension, requireCachedModel, saveResult } from "./harness.mjs";
 
@@ -35,6 +37,12 @@ try {
   await context.setOffline(true);
   await session.send("prepare");
   const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  const worlds = [];
+  cdp.on("Runtime.executionContextCreated", ({ context }) =>
+    worlds.push(context),
+  );
+  await cdp.send("Runtime.enable");
   await page.goto(url);
   const send = (action, payload) =>
     bridge.evaluate(
@@ -80,6 +88,41 @@ try {
   const png = await readFile(".workspace/qa/post-731.png");
   assert.equal(png.readUInt32BE(16), 800);
   assert.equal(png.subarray(1, 4).toString(), "PNG");
+  const image = await loadImage(png);
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0);
+  const pixels = ctx.getImageData(0, 0, image.width, image.height);
+  const code = jsQR(pixels.data, image.width, image.height);
+  assert.equal(code?.data, "https://x.com/example/status/731");
+  result.qrDestination = code.data;
+  const share = dialog.getByRole("button", { name: "Share image" });
+  if (await share.count()) {
+    const extensionId = new URL(bridge.url()).hostname;
+    const world = worlds.find(
+      (world) => world.origin === `chrome-extension://${extensionId}`,
+    );
+    assert.ok(world, "Expected the installed content world");
+    const evaluate = async (expression) => {
+      const reply = await cdp.send("Runtime.evaluate", {
+        contextId: world.id,
+        expression,
+        returnByValue: true,
+      });
+      assert.ok(!reply.exceptionDetails, reply.exceptionDetails?.text);
+      return reply.result.value;
+    };
+    await evaluate(`Object.defineProperty(navigator, "share", { configurable: true, value: async ({ files }) => {
+      globalThis.postCardShare = files.map(({ name, size, type }) => ({ name, size, type }));
+      throw new DOMException("Cancelled by test", "AbortError");
+    } })`);
+    await share.click();
+    assert.deepEqual(await evaluate("globalThis.postCardShare"), [
+      { name: "post-731.png", size: png.length, type: "image/png" },
+    ]);
+    await expect(dialog.getByRole("status")).toBeEmpty();
+    result.controlledSharePayload = true;
+  }
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   result.pngBytes = png.length;

@@ -5,6 +5,8 @@ export const copy = {
   compareContext: "Compare page context",
   postCard: "Bilingual post card",
   savePostCard: "Save image",
+  sharePostCard: "Share image",
+  sharePostCardFailed: "Could not share the image.",
   postCardUnavailable: "Translate this post before creating its card.",
   comparingContext: "Comparing translations…",
   withoutPageContext: "Without page context",

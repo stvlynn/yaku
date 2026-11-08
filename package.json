@@ -33,7 +33,8 @@
     "pdfjs-dist": "^6.5.438",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tesseract.js": "7.0.0"
+    "tesseract.js": "7.0.0",
+    "uqr": "0.1.3"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.1.0",
@@ -45,6 +46,7 @@
     "@types/react-dom": "^19.0.0",
     "@wxt-dev/module-react": "1.2.2",
     "jsdom": "^31.0.0",
+    "jsqr": "1.4.0",
     "prettier": "^3.6.0",
     "typescript": "^5.9.0",
     "vite": "8.2.0",
