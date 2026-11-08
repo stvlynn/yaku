@@ -7,17 +7,21 @@ import { pathToFileURL } from "node:url";
 import { articleContextFixtures } from "./article-context-fixtures.mjs";
 import { saveResult } from "./harness.mjs";
 import { measureArticleTerminology } from "./article-terminology.mjs";
+import { measureGroundedThemes } from "./article-grounded-theme.mjs";
 
 const terminology = process.argv.includes("--terminology");
 const ambiguity = process.argv.includes("--ambiguous");
 const guided = process.argv.includes("--guided");
+const grounded = process.argv.includes("--grounded-theme");
 const resultName = terminology
   ? ambiguity
     ? guided
       ? "article-terminology-guided"
       : "article-terminology-ambiguity"
     : "article-terminology"
-  : "article-context-generation";
+  : grounded
+    ? "article-grounded-theme"
+    : "article-context-generation";
 
 const require = createRequire(import.meta.url);
 const wxtRequire = createRequire(require.resolve("wxt"));
@@ -141,7 +145,17 @@ try {
       ambiguity,
       guided,
     );
-  for (const fixture of terminology ? [] : articleContextFixtures) {
+  if (grounded)
+    await measureGroundedThemes(
+      (input) =>
+        page.evaluate((input) => window.generateExperiment(input), input),
+      (observation) => {
+        result.fixtures.push(observation);
+        saveResult(resultName, result);
+        console.log(JSON.stringify(observation));
+      },
+    );
+  for (const fixture of terminology || grounded ? [] : articleContextFixtures) {
     const record = { ...fixture, variants: [] };
     result.fixtures.push(record);
     for (const protocol of ["plain", "json"]) {
