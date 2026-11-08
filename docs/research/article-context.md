@@ -2,7 +2,7 @@
 
 ## Scope and evidence
 
-This is a read-only clean-room specification for the context/terminology preparation that underlies Translation Comparison. It is not an implementation or an original-extension runtime acceptance. No proprietary script was executed, no account/service endpoint was contacted, and no product, build, model profile or experiment script was changed. The only authored file in this investigation is this document. [Translation editing research](translation-editing.md) establishes the comparison journey and its separate limits.
+This clean-room specification describes the context/terminology preparation that underlies Translation Comparison. Its initial investigation was read-only static research, not an implementation or an original-extension context-runtime acceptance. Subsequent local-model experiments are reported separately in [article-context experiments](article-context-experiments.md); their bounded results do not establish full context preparation or comparison parity. [Translation editing research](translation-editing.md) establishes the comparison journey and its separate limits.
 
 The supplied 1.34.2 package was inspected as inert bytes. SHA-256: `content_main.js` = `10f6ec883d76f38ae269d297a20b44551a88894fbc168a06db0c07065e0777a6`; `default_config.json` = `622e4c836ad6320a07338595c59213a6ae9c2757e1a9fc29fb952d6b3f219910`; `locales.json` = `6e03aa62c5ac437014d8a3e5227089dd7ee044b8124b38c1e07d0c30237929e6`. C offsets below are zero-based UTF-16 code units in decoded `content_main.js`, not byte offsets.
 

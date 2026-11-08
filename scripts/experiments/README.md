@@ -44,6 +44,14 @@ Historical prompt contrasts were recorded against background SHA `d469fe2869828f
 
 Profiles default to `.workspace/experiments/model-profile`; JSON evidence is written to `.workspace/experiments/results/`. Keep those large, local artifacts out of version control. Never point the harness at your everyday personal Chrome profile. Only one Chrome process may use an experiment profile at a time.
 
+Article-context experiments run sequentially to avoid competing GPU workloads:
+
+- `node scripts/experiments/article-context-ablation.mjs`: installed offline extension, four sense fixtures across baseline/direct-original/reviewed-context arms. Requires a complete `YAKU_MODEL_PROFILE`.
+- `node scripts/experiments/article-context-generation.mjs`: standalone browser WebGPU generation, plain/JSON themes and subsequent translations using local assets under `.workspace/research/model-probe/model`. Uses the production prompt builder and EOS generator; no extension workflow or model-download claim. The current build supplies local WASM assets.
+- `node scripts/experiments/article-context-integrity.mjs`: installed offline extension controls for positive-summary wording, unrelated context, rich markers/731 and an instruction embedded in quoted background. Requires the same complete profile after the earlier browser is closed.
+
+The [measured report](../../docs/research/article-context-experiments.md) retains failures and distinguishes sense accuracy, schema validity and summary fidelity. Successful script completion means the requested experiment executed, not that its outputs passed semantic acceptance.
+
 `YAKU_BROWSER_CHANNEL` defaults to `chrome`; an installed compatible alternative can be selected explicitly. Set `YAKU_HEADLESS=false` to observe Chrome interactively. Runtime errors, unsupported adapters, incomplete caches, and download failures cause an explicit nonzero exit. No cloud inference or alternative model is used.
 
 Media experiments use the same explicitly prepared cache and executed-background preflight:
