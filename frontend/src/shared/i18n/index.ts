@@ -244,6 +244,7 @@ export const copy = {
   input: "Translate while writing",
   inputHelp:
     "Translate editable text. Use // before the part to translate, or /ja to choose Japanese.",
+  inputSpaceTrigger: "Translate with three spaces",
   subtitles: "Bilingual subtitles",
   subtitlesHelp: "Translate supported video captions alongside the original.",
   floating: "Floating page control",

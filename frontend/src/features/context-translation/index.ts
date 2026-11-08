@@ -61,9 +61,54 @@ export function installContextTranslation(options: {
     | undefined;
   const abort = new AbortController();
   const signal = abort.signal;
-  const editors = createEditorTracker(document, signal, (element) => {
+  let spaces: { editor: HTMLElement; count: number; time: number } | undefined;
+  let repeatingSpace = false;
+  const editors = createEditorTracker(document, signal, (element, event) => {
     if (element === inputEditor && requestId) close();
+    if (event.type === "beforeinput") return;
+    const settings = getSettings();
+    if (
+      !(event instanceof view.InputEvent) ||
+      !event.isTrusted ||
+      event.isComposing ||
+      event.inputType !== "insertText" ||
+      event.data !== " " ||
+      repeatingSpace ||
+      !settings.inputEnabled ||
+      !settings.inputSpaceTrigger ||
+      !editors.caretAtEnd(element)
+    ) {
+      spaces = undefined;
+      return;
+    }
+    const count =
+      spaces?.editor === element && event.timeStamp - spaces.time <= 200
+        ? spaces.count + 1
+        : 1;
+    spaces = { editor: element, count, time: event.timeStamp };
+    if (count !== 3) return;
+    spaces = undefined;
+    if (editors.activeEditor() === element)
+      void translateInput(true).catch(onError);
   });
+  for (const type of ["focusout", "pointerdown", "keyup"] as const)
+    document.addEventListener(
+      type,
+      () => {
+        repeatingSpace = false;
+        if (type !== "keyup") spaces = undefined;
+      },
+      { capture: true, signal },
+    );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (!event.isTrusted) return;
+      repeatingSpace = event.key === " " && event.repeat;
+      if (event.key !== " " || repeatingSpace) spaces = undefined;
+    },
+    { capture: true, signal },
+  );
   function allowed(node: Node, editable = false): boolean {
     const exclusions =
       '[data-yaku-owned]:not([data-yaku-owned="source"]),[translate="no"],.notranslate,script,style,code,pre,kbd,samp,[hidden],[aria-hidden="true"]';
@@ -361,7 +406,7 @@ export function installContextTranslation(options: {
     },
     { signal },
   );
-  async function translateInput() {
+  async function translateInput(spaceTriggered = false) {
     if (!getSettings().inputEnabled) return;
     const element = editors.activeEditor();
     if (!element || !allowed(element, true)) return;
@@ -386,7 +431,7 @@ export function installContextTranslation(options: {
     try {
       output = await translate({
         id,
-        text: snapshot.text,
+        text: spaceTriggered ? snapshot.text.trimEnd() : snapshot.text,
         sourceLanguage: settings.sourceLanguage,
         context: snapshot.codec?.instruction,
         targetLanguage,

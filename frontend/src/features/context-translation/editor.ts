@@ -46,7 +46,7 @@ function inputDirective(text: string) {
 export function createEditorTracker(
   document: Document,
   signal: AbortSignal,
-  onEdit?: (editor: HTMLElement) => void,
+  onEdit?: (editor: HTMLElement, event: Event) => void,
 ) {
   const view = document.defaultView!;
   const versions = new WeakMap<Editor, number>();
@@ -105,7 +105,7 @@ export function createEditorTracker(
         )
           composing.add(element);
         if (event.type === "compositionend") composing.delete(element);
-        onEdit?.(element);
+        onEdit?.(element, event);
       },
       { capture: true, signal },
     );
@@ -116,6 +116,25 @@ export function createEditorTracker(
     while (active?.shadowRoot?.activeElement)
       active = active.shadowRoot.activeElement;
     return editorFor(active);
+  }
+  function caretAtEnd(element: Editor) {
+    if (composing.has(element)) return false;
+    if (isNative(element))
+      return (
+        element.selectionStart === element.value.length &&
+        element.selectionEnd === element.value.length
+      );
+    const selection = view.getSelection();
+    if (
+      !selection?.isCollapsed ||
+      !selection.anchorNode ||
+      !element.contains(selection.anchorNode)
+    )
+      return false;
+    const rest = document.createRange();
+    rest.selectNodeContents(element);
+    rest.setStart(selection.anchorNode, selection.anchorOffset);
+    return rest.toString() === "";
   }
   function capture(element: Editor): Snapshot | undefined {
     if (composing.has(element)) return;
@@ -279,5 +298,5 @@ export function createEditorTracker(
     }
     return { text: plain, undo, canUndo };
   }
-  return { activeEditor, capture, current, apply, editorFor };
+  return { activeEditor, caretAtEnd, capture, current, apply, editorFor };
 }

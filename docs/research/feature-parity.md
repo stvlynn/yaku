@@ -72,7 +72,9 @@ Observed theme identifiers (labels are summarized, not artwork): none, grey, das
 
 ## Input directives
 
-The supplied input defaults name `/` as the starting key and Space as the trailing key, with three repetitions. English locale descriptions distinguish `//` for a suffix and `/ja` for a target-language override. Yaku accepts those directives through its existing input-translation command and context action. It uses the last recognized directive at a whitespace boundary, which keeps slashes inside URLs out of the directive parser. Native values and rich prefixes are retained around the translated suffix, and undo restores the full original value or original rich nodes. Repeated-Space triggering, configurable delimiters and the target language bar are separate interaction gaps.
+The supplied input defaults name `/` as the starting key and Space as the trailing key, with three repetitions and a 200 ms desktop interval between presses. English locale descriptions distinguish `//` for a suffix and `/ja` for a target-language override. Yaku accepts those directives through the input-translation command, context action and Space gesture. It uses the last recognized directive at a whitespace boundary, which keeps slashes inside URLs out of the directive parser.
+
+The Space gesture counts browser-confirmed edits at the end of the same focused editor. Counting keydowns alone would also count prevented edits and held-key repeats. Counting input events alone would miss the repeat flag. Yaku observes the actual input and uses the keyboard repeat signal to reset the sequence. The existing transaction preserves the full original editor state for undo, including the three spaces, and omits trailing whitespace from the model request. The gesture can be disabled separately in settings. The installed reference's mobile timing, configurable delimiters and target language bar still need interaction coverage.
 
 ## Document and file matrix
 

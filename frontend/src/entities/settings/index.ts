@@ -27,6 +27,7 @@ export interface Settings {
   selectionEnabled: boolean;
   hoverEnabled: boolean;
   inputEnabled: boolean;
+  inputSpaceTrigger: boolean;
   subtitlesEnabled: boolean;
   showFloatingButton: boolean;
   syncPreferences: boolean;
@@ -54,6 +55,7 @@ export const defaultSettings: Settings = {
   selectionEnabled: true,
   hoverEnabled: false,
   inputEnabled: true,
+  inputSpaceTrigger: true,
   subtitlesEnabled: true,
   showFloatingButton: true,
   syncPreferences: false,

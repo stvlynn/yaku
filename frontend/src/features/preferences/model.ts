@@ -107,6 +107,7 @@ export function validateSettings(value: unknown): Settings {
     "selectionEnabled",
     "hoverEnabled",
     "inputEnabled",
+    "inputSpaceTrigger",
     "subtitlesEnabled",
     "showFloatingButton",
     "syncPreferences",

@@ -10,6 +10,7 @@ export function ActivationPreferences({
     ["selectionEnabled", copy.selection, copy.selectionHelp],
     ["hoverEnabled", copy.hover, copy.hoverHelp],
     ["inputEnabled", copy.input, copy.inputHelp],
+    ["inputSpaceTrigger", copy.inputSpaceTrigger, undefined],
     ["subtitlesEnabled", copy.subtitles, copy.subtitlesHelp],
     ["showFloatingButton", copy.floating, copy.floatingHelp],
   ] as const;
