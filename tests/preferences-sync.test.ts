@@ -109,6 +109,8 @@ describe("browser preference sync", () => {
     const {
       inputSpaceTrigger: _trigger,
       inputTargetLanguage: _inputLanguage,
+      inputMatchConversation: _matchConversation,
+      inputMatchPage: _matchPage,
       syncPreferences: _sync,
       ...previousSettings
     } = defaultSettings;

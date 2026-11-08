@@ -77,6 +77,9 @@ export default defineContentScript({
       translate,
       getSettings,
       onError,
+      detectLanguage: async (text) =>
+        reliableLanguageObservation(await chrome.i18n.detectLanguage(text))
+          ?.language,
       inputGlossary: (targetLanguage) =>
         resolveGlossary(settings, { targetLanguage, url: location.href }),
       saveInputTargetLanguage: async (inputTargetLanguage) => {

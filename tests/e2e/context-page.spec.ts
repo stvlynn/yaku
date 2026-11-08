@@ -416,6 +416,39 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       expect(await page.evaluate(() => getSelection()?.toString())).toBe(
         "friend",
       );
+      const conversationUrl = `https://www.youtube.com/watch?yakuFixture=${nonce}`;
+      const japaneseComment =
+        "この動画はとても分かりやすかったです。詳しい説明をありがとうございます。次の動画も楽しみにしています。";
+      const englishDescription =
+        "The video shows how to care for plants. It includes advice about soil, watering and sunlight. Please subscribe for more videos.";
+      await context.route(conversationUrl, (route) =>
+        route.fulfill({
+          contentType: "text/html; charset=utf-8",
+          body: `<!doctype html><html lang="en"><main><div id="description-inline-expander">${englishDescription}</div><div id="comment"><yt-attributed-string id="content-text">${japaneseComment}<span data-yaku-owned="translation">${englishDescription}</span></yt-attributed-string><textarea></textarea></div></main></html>`,
+        }),
+      );
+      const conversation = await context.newPage();
+      await conversation.goto(conversationUrl);
+      await expect(conversation.locator("[data-yaku-floating]")).toBeVisible();
+      const reply = conversation.locator("textarea");
+      await reply.fill("Good morning.");
+      await sendFixture(bridge, conversation, "translate-input");
+      await expect(reply).toHaveValue(/おはよう/u, { timeout: 180000 });
+      evidence.conversationInput = await reply.inputValue();
+      evidence.conversationDetection = await bridge.evaluate(
+        async ([nearby, description]) => ({
+          nearby: await chrome.i18n.detectLanguage(nearby!),
+          description: await chrome.i18n.detectLanguage(description!),
+        }),
+        [japaneseComment, englishDescription],
+      );
+      await clickContextButton(conversation, "Undo translation");
+      await expect(reply).toHaveValue("Good morning.");
+      await reply.fill("// Good morning.");
+      await sendFixture(bridge, conversation, "translate-input");
+      await expect(reply).toHaveValue(/早/u, { timeout: 180000 });
+      await conversation.close();
+      await page.bringToFront();
       await page.locator("#pick").evaluate((element) => {
         const range = document.createRange();
         range.selectNodeContents(element);

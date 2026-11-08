@@ -29,6 +29,7 @@ type Snapshot = {
   prefix?: string | DocumentFragment;
   suffix?: string;
   targetLanguage?: string;
+  hasDirective?: boolean;
 };
 
 function nodePath(root: Node, node: Node): number[] {
@@ -234,6 +235,7 @@ export function createEditorTracker(
       } else {
         const directive = inputDirective(snapshot.text);
         if (directive) {
+          snapshot.hasDirective = true;
           snapshot.targetLanguage = directive.targetLanguage;
           snapshot.prefix = snapshot.text.slice(0, directive.start);
           snapshot.text = snapshot.text.slice(directive.end);
@@ -271,6 +273,7 @@ export function createEditorTracker(
         translationRoot.append(selectedRange.cloneContents());
         snapshot.replaceSelection = richReplacement(element, selectedRange);
       } else if (directive) {
+        snapshot.hasDirective = true;
         snapshot.targetLanguage = directive.targetLanguage;
         const range = document.createRange();
         range.selectNodeContents(element);

@@ -10,6 +10,7 @@ import {
 } from "../../shared/translation-markup";
 import { createEditorTracker } from "./editor";
 import { contextErrors } from "./config";
+import { conversationSample, supportedInputLanguage } from "./input-language";
 
 export function installContextTranslation(options: {
   document: Document;
@@ -19,6 +20,7 @@ export function installContextTranslation(options: {
   cancel?: (id: string) => Promise<void>;
   saveInputTargetLanguage?: (language: string) => Promise<void>;
   inputGlossary?: (language: string) => Settings["glossary"];
+  detectLanguage?: (text: string) => Promise<string | undefined>;
 }) {
   const {
     document,
@@ -28,6 +30,7 @@ export function installContextTranslation(options: {
     cancel,
     saveInputTargetLanguage,
     inputGlossary,
+    detectLanguage,
   } = options;
   const view = document.defaultView!;
   const host = document.createElement("div");
@@ -170,11 +173,20 @@ export function installContextTranslation(options: {
       if (element.matches("p,li,blockquote,h1,h2,h3,td,th,figcaption"))
         return element;
   }
-  function sourceText(element: Element): string {
+  function sourceText(element: Element, limit = Infinity): string {
     const walker = document.createTreeWalker(element, 4);
     const values: string[] = [];
-    for (let node = walker.nextNode(); node; node = walker.nextNode())
-      if (allowed(node)) values.push(node.textContent ?? "");
+    let length = 0;
+    for (
+      let node = walker.nextNode();
+      node && length < limit;
+      node = walker.nextNode()
+    ) {
+      if (!allowed(node)) continue;
+      const text = (node.textContent ?? "").slice(0, limit - length);
+      values.push(text);
+      length += text.length;
+    }
     return values.join("");
   }
   function hoverTranslate() {
@@ -432,10 +444,60 @@ export function installContextTranslation(options: {
       return;
     }
     if (!snapshot?.text.trim()) return;
+    const settings = getSettings();
+    let target = snapshot.targetLanguage ?? settings.inputTargetLanguage;
+    if (!snapshot.hasDirective && detectLanguage) {
+      const conversation = settings.inputMatchConversation
+        ? conversationSample(element, (node) => sourceText(node, 1024))
+        : "";
+      const page = settings.inputMatchPage
+        ? (document.querySelector("main, article, [role=main]") ??
+          document.body)
+        : undefined;
+      if (conversation || page) {
+        close();
+        const revision = generation;
+        const url = document.URL;
+        const observe = async (text: string) => {
+          if (!text.trim()) return;
+          return supportedInputLanguage(
+            await detectLanguage(text).catch(() => undefined),
+          );
+        };
+        const [conversationLanguage, draftLanguage] = await Promise.all([
+          observe(conversation),
+          settings.sourceLanguage === "auto"
+            ? observe(
+                snapshot.codec
+                  ? snapshot.text.replace(/<\/?yaku-[^>]+>/g, "")
+                  : snapshot.text,
+              )
+            : supportedInputLanguage(settings.sourceLanguage),
+        ]);
+        const inferred =
+          conversationLanguage ??
+          (page
+            ? ((await observe(sourceText(page, 2048))) ??
+              supportedInputLanguage(document.documentElement.lang))
+            : undefined);
+        const current = getSettings();
+        if (
+          generation !== revision ||
+          document.URL !== url ||
+          editors.activeEditor() !== element ||
+          !editors.current(snapshot) ||
+          current.inputTargetLanguage !== settings.inputTargetLanguage ||
+          current.inputMatchConversation !== settings.inputMatchConversation ||
+          current.inputMatchPage !== settings.inputMatchPage
+        )
+          return;
+        if (inferred && inferred !== draftLanguage) target = inferred;
+      }
+    }
     await translateInputSnapshot(
       snapshot,
       spaceTriggered ? snapshot.text.trimEnd() : snapshot.text,
-      snapshot.targetLanguage ?? getSettings().inputTargetLanguage,
+      target,
     );
   }
   async function translateInputSnapshot(
@@ -485,6 +547,9 @@ export function installContextTranslation(options: {
       !isCurrent() ||
       !currentSettings.inputEnabled ||
       currentSettings.inputTargetLanguage !== settings.inputTargetLanguage ||
+      currentSettings.inputMatchConversation !==
+        settings.inputMatchConversation ||
+      currentSettings.inputMatchPage !== settings.inputMatchPage ||
       JSON.stringify(
         inputGlossary?.(targetLanguage) ?? currentSettings.glossary,
       ) !== JSON.stringify(glossary)

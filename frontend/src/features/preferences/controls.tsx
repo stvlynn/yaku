@@ -11,6 +11,8 @@ export function ActivationPreferences({
     ["hoverEnabled", copy.hover, copy.hoverHelp],
     ["inputEnabled", copy.input, copy.inputHelp],
     ["inputSpaceTrigger", copy.inputSpaceTrigger, undefined],
+    ["inputMatchConversation", copy.inputMatchConversation, undefined],
+    ["inputMatchPage", copy.inputMatchPage, undefined],
     ["subtitlesEnabled", copy.subtitles, copy.subtitlesHelp],
     ["showFloatingButton", copy.floating, copy.floatingHelp],
   ] as const;

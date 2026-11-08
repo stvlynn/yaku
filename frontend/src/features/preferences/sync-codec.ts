@@ -113,6 +113,8 @@ export function decodeSyncedSettings(
           key !== "syncPreferences" &&
           key !== "inputSpaceTrigger" &&
           key !== "inputTargetLanguage" &&
+          key !== "inputMatchConversation" &&
+          key !== "inputMatchPage" &&
           !Object.hasOwn(value, key),
       )
     )

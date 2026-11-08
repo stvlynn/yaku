@@ -57,6 +57,37 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it("uses the opt-in page language but keeps the saved target when it matches the draft", async () => {
+    document.body.innerHTML =
+      "<main><p>Texte de la page.</p><textarea></textarea></main>";
+    const editor = document.querySelector("textarea")!;
+    editor.focus();
+    const run = vi.fn<Translate>(async ({ id }) => ({
+      id,
+      text: "translated",
+      elapsedMs: 0,
+    }));
+    const controller = installContextTranslation({
+      document,
+      translate: run,
+      getSettings: () => ({
+        ...defaultSettings,
+        inputMatchPage: true,
+        inputTargetLanguage: "zh",
+      }),
+      detectLanguage: async (text) => (text === "Hello." ? "en" : "fr"),
+      onError: (error) => {
+        throw error;
+      },
+    });
+    controllers.push(controller);
+    editor.value = "Hello.";
+    await controller.translateInput();
+    expect(run.mock.calls[0]?.[0].targetLanguage).toBe("fr");
+    editor.value = "Bonjour.";
+    await controller.translateInput();
+    expect(run.mock.calls[1]?.[0].targetLanguage).toBe("zh");
+  });
   it("translates only the native selection and restores its direction on undo", async () => {
     document.body.innerHTML =
       "<textarea>Keep /ja Good morning. And keep this.</textarea>";

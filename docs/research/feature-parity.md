@@ -80,7 +80,9 @@ The supplied artifact sets the independent input target to English. Its desktop 
 
 The reference's input demo advertises translating the selected part with the shortcut. Yaku gives an active editor selection priority over full-field directives. The native transaction keeps the prefix and suffix out of the model request. Rich text uses a cloned DOM Range and reattaches partial boundary wrappers, preserving their formatting and surrounding content across paragraph boundaries. Undo restores the original selection direction and original rich nodes. [Reference input demo](https://immersivetranslate.com/en/input/) · [DOM Range algorithms](https://dom.spec.whatwg.org/#ranges)
 
-The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Its page-language fallback is separately configurable and disabled by default. That automatic choice, the bar's editor-relative placement, configurable delimiters and mobile timing remain open.
+The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Yaku looks for the source nearest the composer where a reply scope is available, then samples recent source messages or the post description according to the site. It excludes extension-generated translation and editable text, checks Chrome's local language observation, and retains the saved target if the inference would match the draft language. The separately configurable page fallback defaults to off. The Chrome fixture contrasts a Japanese reply thread with an English video description and verifies that the reply uses Japanese while `//` uses the saved target. [Chrome language detection](https://developer.chrome.com/docs/extensions/reference/api/i18n#method-detectLanguage)
+
+Live platform checks, the bar's editor-relative placement, configurable delimiters and mobile timing remain open.
 
 ## Document and file matrix
 
