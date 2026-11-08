@@ -94,6 +94,7 @@ try {
   const comparison = page.getByRole("dialog", { name: "Compare page context" });
   await expect(comparison).toContainText(result.baseline, { timeout: 90000 });
   await expect(comparison).toContainText(result.contextual);
+  await expect(comparison.locator("mark")).toContainText("河岸");
   await expect(target).toHaveText(result.contextual);
   await comparison.getByRole("button", { name: "Close" }).click();
   result.pairedComparison = true;

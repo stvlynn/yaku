@@ -1,5 +1,6 @@
 import { copy } from "../../../shared/i18n";
 import { contentThemeCss } from "../../../shared/styles/content-theme";
+import { contextualChanges } from "./context-diff";
 
 export function openContextDialog(
   document: Document,
@@ -27,6 +28,7 @@ export function openContextDialog(
     p{margin:12px 0;overflow-wrap:anywhere;white-space:pre-wrap}
     .pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:12px}
     section{padding:12px;border:1px solid var(--border);border-radius:10px}
+    mark{background:var(--accent);color:var(--accent-foreground);border-radius:2px}
   `;
   const dialog = document.createElement("dialog");
   dialog.setAttribute("aria-label", copy.compareContext);
@@ -71,10 +73,26 @@ export function openContextDialog(
         title.textContent = label;
         const text = document.createElement("p");
         text.dir = "auto";
-        text.textContent =
-          arm.status === "fulfilled"
-            ? arm.value
-            : copy.contextComparisonUnavailable;
+        if (
+          arm.status === "fulfilled" &&
+          arm === result.withContext &&
+          result.withoutContext.status === "fulfilled"
+        ) {
+          for (const run of contextualChanges(
+            result.withoutContext.value,
+            arm.value,
+          )) {
+            if (run.changed && run.text.trim()) {
+              const mark = document.createElement("mark");
+              mark.textContent = run.text;
+              text.append(mark);
+            } else text.append(run.text);
+          }
+        } else
+          text.textContent =
+            arm.status === "fulfilled"
+              ? arm.value
+              : copy.contextComparisonUnavailable;
         section.append(title, text);
         pair.append(section);
       }
