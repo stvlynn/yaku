@@ -9,8 +9,14 @@ import { saveResult } from "./harness.mjs";
 import { measureArticleTerminology } from "./article-terminology.mjs";
 
 const terminology = process.argv.includes("--terminology");
+const ambiguity = process.argv.includes("--ambiguous");
+const guided = process.argv.includes("--guided");
 const resultName = terminology
-  ? "article-terminology"
+  ? ambiguity
+    ? guided
+      ? "article-terminology-guided"
+      : "article-terminology-ambiguity"
+    : "article-terminology"
   : "article-context-generation";
 
 const require = createRequire(import.meta.url);
@@ -132,6 +138,8 @@ try {
           `${observation.arm}: ${observation.batches.length} batches`,
         );
       },
+      ambiguity,
+      guided,
     );
   for (const fixture of terminology ? [] : articleContextFixtures) {
     const record = { ...fixture, variants: [] };

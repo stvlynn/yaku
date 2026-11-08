@@ -67,3 +67,20 @@ Run `node scripts/experiments/article-context-generation.mjs --terminology` with
 The separate extractor initially split `Northwater Observatory` and produced empty values for two candidates. It returned the full institution name and sensor term on the second batch. The final batch included a proposed translation lacking the `的` present in the actual text, so exact grounding rejected it. String occurrence alone could still accept an overly broad alias such as `Northwater → 北水`.
 
 Both the baseline and separate extraction used `北水观测站` and `潮汐流量传感器` consistently in all three batches. The measured gain was successful propagation, with no improvement in consistency on this fixture and about twice the generation time. The next contrast needs an initially ambiguous later mention and a distinct combined prompt whose output contract is specified once. The raw output, timing, accepted and rejected candidates, and per-batch requests are in `.workspace/experiments/results/article-terminology.json`.
+
+### Ambiguous later mentions
+
+Add `--ambiguous` to the terminology command to run three dental passages. The first explicitly establishes a ceramic dental crown. Two later passages use only `crown`. The manual `molar → 臼齿` mapping was held fixed.
+
+| Arm                                                | Later `crown` translations                             | Generation time |
+| -------------------------------------------------- | ------------------------------------------------------ | --------------: |
+| Baseline                                           | `皇冠`, `皇冠`                                         |         13.41 s |
+| Separate extraction                                | `皇冠`, `皇冠`                                         |         25.36 s |
+| Combined prompt with a single output contract      | Two of three responses failed the paired JSON protocol |         15.95 s |
+| Recurrence-guided separate extraction (`--guided`) | `陶瓷冠`, `陶瓷冠`                                     |         20.31 s |
+
+Unguided extraction found `ceramic crown` in the first passage, which could not match either later mention. It then learned `crown → 皇冠` from the first incorrect translation. Both strings occurred in that pair, demonstrating that occurrence validation alone cannot prevent a semantic error from propagating.
+
+The guided extractor could inspect later original passages and chose the shorter recurring `crown` while grounding `陶瓷冠` in the initial dental translation. Both later translations preserved that meaning and retained `731` where present. The guided run omitted extraction after the final passage because it had no downstream consumer. Timing came from separate sequential runs and should not be treated as a precise relative benchmark. Evidence is in `article-terminology-ambiguity.json` and `article-terminology-guided.json` under the local experiment results directory.
+
+This supplies a positive fixture for recurrence-guided article terminology and a negative fixture for unguided error propagation. Before broader use, test articles where a repeated spelling intentionally changes sense, and preserve an explicit manual term when it disagrees with the automatically proposed mapping.
