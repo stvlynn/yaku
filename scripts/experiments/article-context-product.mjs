@@ -11,6 +11,7 @@ import {
 
 const result = { completed: false, usesModelStubs: false };
 const dental = process.argv.includes("--terminology");
+const mixed = dental && process.argv.includes("--mixed-senses");
 const url = `http://article-context.test/canoe?run=${crypto.randomUUID()}`;
 let session;
 try {
@@ -61,6 +62,13 @@ try {
   await session.send("prepare");
   const page = await context.newPage();
   await page.goto(url);
+  if (mixed)
+    await page.locator("main").evaluate((main) => {
+      const paragraph = document.createElement("p");
+      paragraph.id = "royal";
+      paragraph.textContent = "The king wore the crown at the coronation.";
+      main.append(paragraph);
+    });
   const original = await page.locator("main").innerHTML();
   const port = (
     await readFile(join(profileDirectory, "DevToolsActivePort"), "utf8")
@@ -86,7 +94,7 @@ try {
   let panel = await popup();
   await panel.getByRole("button", { name: "Translate this page" }).click();
   await panel.close();
-  await expect(rendered).toHaveCount(3, { timeout: 90000 });
+  await expect(rendered).toHaveCount(mixed ? 4 : 3, { timeout: 90000 });
   result.baseline = await target.textContent();
   assert.match(result.baseline, dental ? /皇冠/u : /银行/u);
   panel = await popup();
@@ -98,7 +106,7 @@ try {
   await expect(target).toContainText(dental ? /陶瓷.*冠/u : /岸/u, {
     timeout: 90000,
   });
-  await expect(rendered).toHaveCount(3, { timeout: 90000 });
+  await expect(rendered).toHaveCount(mixed ? 4 : 3, { timeout: 90000 });
   result.contextual = await target.textContent();
   assert.doesNotMatch(result.contextual, dental ? /皇冠/u : /银行/u);
   if (dental) {
@@ -109,11 +117,20 @@ try {
     const propagated = requests.find(
       (request) =>
         request.text === "The crown arrived on Monday." &&
-        request.glossary?.crown,
+        request.articleTerminology?.crown,
     );
-    assert.match(propagated?.glossary.crown ?? "", /陶瓷.*冠/u);
-    result.propagatedTerm = propagated.glossary.crown;
-    await expect(rendered.last()).toContainText("731");
+    assert.match(
+      propagated?.articleTerminology.crown.target ?? "",
+      /陶瓷.*冠/u,
+    );
+    result.propagatedTerm = propagated.articleTerminology.crown.target;
+    await expect(rendered.nth(2)).toContainText("731");
+    if (mixed) {
+      const royal = page.locator('#royal [data-yaku-owned="translation"]');
+      await expect(royal).toContainText(/王冠|皇冠/u);
+      await expect(royal).not.toContainText("陶瓷");
+      result.royalSense = await royal.textContent();
+    }
   }
   await target.evaluate((element) => {
     const range = document.createRange();

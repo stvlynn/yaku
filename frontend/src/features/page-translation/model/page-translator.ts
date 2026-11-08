@@ -76,7 +76,7 @@ type RecordEntry = {
   comparison?: {
     request: Omit<TranslationRequest, "id">;
     decode: (text: string) => DocumentFragment;
-    automatic?: Record<string, string>;
+    automatic?: TranslationRequest["articleTerminology"];
   };
   block: TranslationRoot;
   nodes: Text[];
@@ -126,7 +126,10 @@ export function createPageTranslator({
   let withArticleContext = false;
   let contextQueue = Promise.resolve();
   let terminologyRevision = 0;
-  const articleTerms = new Map<TranslationRoot, Record<string, string>>();
+  const articleTerms = new Map<
+    TranslationRoot,
+    NonNullable<TranslationRequest["articleTerminology"]>
+  >();
   let translationSettings = "";
   const routeKey = () =>
     `${view.location.pathname}${view.location.search}${/^#!?\//.test(view.location.hash) ? view.location.hash : ""}`;
@@ -454,9 +457,7 @@ export function createPageTranslator({
       const result = await translate({
         id,
         ...request,
-        glossary: automatic
-          ? { ...automatic, ...request.glossary }
-          : request.glossary,
+        articleTerminology: automatic,
       }).finally(() => requests.delete(id));
       if (
         !active ||
@@ -517,9 +518,17 @@ export function createPageTranslator({
             return;
           for (const item of later) {
             const matching = Object.fromEntries(
-              Object.entries(extracted.terms ?? {}).filter(([term]) =>
-                item.text.includes(term),
-              ),
+              Object.entries(extracted.terms ?? {})
+                .filter(([term]) => item.text.includes(term))
+                .map(([term, target]) => [
+                  term,
+                  {
+                    target,
+                    sourcePassage: Array.from(entry.values.join(""))
+                      .slice(0, 300)
+                      .join(""),
+                  },
+                ]),
             );
             if (Object.keys(matching).length)
               articleTerms.set(item.block, {
@@ -784,10 +793,7 @@ export function createPageTranslator({
             ...request,
             id,
             articleBackground,
-            glossary:
-              articleBackground && automatic
-                ? { ...automatic, ...request.glossary }
-                : request.glossary,
+            articleTerminology: articleBackground ? automatic : undefined,
           });
           return decode(result.text).textContent ?? "";
         } finally {

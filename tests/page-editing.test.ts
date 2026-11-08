@@ -55,14 +55,20 @@ it("carries contextual terms to subsequent sibling passages and clears them on r
   );
   expect(first?.task).toBeUndefined();
   expect(extract?.terminologyEvidence?.later).toEqual(["The crown arrived."]);
-  expect(second?.glossary).toEqual({ crown: "牙冠", tooth: "牙齿" });
+  expect(second?.glossary).toEqual({ tooth: "牙齿" });
+  expect(second?.articleTerminology).toEqual({
+    crown: {
+      target: "牙冠",
+      sourcePassage: "A dental crown protects the tooth.",
+    },
+  });
   expect(palace?.glossary).toEqual({ tooth: "牙齿" });
   controller.restore();
   run.mockClear();
   await controller.translatePage();
   expect(
     run.mock.calls.every(
-      ([request]) => !request.task && !request.glossary?.crown,
+      ([request]) => !request.task && !request.articleTerminology,
     ),
   ).toBe(true);
 });

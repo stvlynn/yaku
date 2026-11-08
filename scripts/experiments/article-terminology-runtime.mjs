@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { launchExtension, requireCachedModel, saveResult } from "./harness.mjs";
 
 const result = { completed: false };
+const mixed = process.argv.includes("--mixed-senses");
 let session;
 try {
   session = await launchExtension();
@@ -36,12 +37,38 @@ try {
     result.later.push(output.text);
   }
   assert.match(result.later[1], /731/u);
+  if (mixed) {
+    result.mixed = [];
+    for (const text of [
+      later[1],
+      "The king wore the crown at the coronation.",
+    ]) {
+      const sample = { text, arms: {} };
+      result.mixed.push(sample);
+      for (const [arm, overrides] of Object.entries({
+        baseline: {},
+        forced: { glossary: { ...result.extraction.terms, ...glossary } },
+        conditional: {
+          context: `Earlier in the article, ${JSON.stringify("crown")} was translated as ${JSON.stringify(result.extraction.terms.crown)} in a dental passage. Reuse that wording only if the current sentence refers to the same object or meaning. If the current sentence clearly uses another sense, translate that sense naturally. Preserve the facts and numbers of the current sentence.`,
+        },
+      })) {
+        sample.arms[arm] = await translate(text, overrides);
+        saveResult("article-terminology-mixed", result);
+        console.log(
+          JSON.stringify({ text, arm, output: sample.arms[arm].text }),
+        );
+      }
+    }
+  }
   result.completed = true;
 } catch (error) {
   result.error = String(error);
   process.exitCode = 1;
 } finally {
-  saveResult("article-terminology-runtime", result);
+  saveResult(
+    mixed ? "article-terminology-mixed" : "article-terminology-runtime",
+    result,
+  );
   console.log(JSON.stringify(result));
   await session?.context.close();
 }

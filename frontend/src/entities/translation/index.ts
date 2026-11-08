@@ -10,6 +10,10 @@ export interface TranslationRequest {
   context?: string;
   articleBackground?: { title: string; nearby: readonly string[] };
   terminologyEvidence?: { translation: string; later: readonly string[] };
+  articleTerminology?: Record<
+    string,
+    { target: string; sourcePassage: string }
+  >;
   glossary?: Record<string, string>;
   task?: "translate" | "rewrite" | "explain" | "extract-terminology";
   writingStyle?: "grammar" | "polite" | "concise" | "formal";
