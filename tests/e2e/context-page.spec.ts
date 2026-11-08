@@ -800,12 +800,13 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       ok: true,
       value: false,
     });
-    await bridge.evaluate(() =>
+    const unload = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
         destination: "background",
         action: "unload-model",
       }),
     );
+    expect(unload.ok, JSON.stringify(unload)).toBe(true);
     await context.setOffline(true);
     const offline = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
@@ -813,7 +814,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
         action: "prepare",
       }),
     );
-    expect(offline.ok).toBe(true);
+    expect(offline.ok, JSON.stringify(offline)).toBe(true);
     const offlineTranslation = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
         destination: "background",
