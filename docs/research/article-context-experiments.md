@@ -53,3 +53,17 @@ Reading controls now offers **Translate with page context** as an explicit page 
 The evidence supports implementing an explicit, source-grounded article-background path with separately typed semantic context and unchanged format instructions. It does **not** justify presenting automatic summaries as verified facts or claiming automatic terminology/context parity. Generated-theme preparation, extractive grounding, automatic term adoption and their lifecycle remain required work from the [article-context specification](article-context.md).
 
 Next compare grounded extraction against the observed free summaries, then test ordered automatic-term propagation and manual-term precedence. Preserve the direct-original arm as the control. Comparison must show two independently generated results from one frozen source/settings snapshot, with identical manual terminology and format constraints; it must not overwrite temporary edits or manufacture a visible difference when results match.
+
+## Ordered terminology experiment
+
+Run `node scripts/experiments/article-context-generation.mjs --terminology` with the existing local WebGPU fixtures. Three consecutive observatory passages were translated in each arm. The manual mapping `eastern inlet → 东侧水道` stayed constant. The extraction arms could carry an accepted pair forward only if both strings appeared in that batch's source and translation. Later batches received matching accumulated terms, with manual terms retaining precedence.
+
+| Arm                                              | Protocol result                                                          | Total generation for three batches |
+| ------------------------------------------------ | ------------------------------------------------------------------------ | ---------------------------------: |
+| Translation baseline                             | Both recurring terms translated consistently                             |                            22.51 s |
+| Separate extraction                              | Three JSON objects parsed. Full name and sensor term reached batch three |                            45.09 s |
+| Combined production prompt with JSON instruction | Three plain-text translations, zero valid paired JSON responses          |                            19.76 s |
+
+The separate extractor initially split `Northwater Observatory` and produced empty values for two candidates. It returned the full institution name and sensor term on the second batch. The final batch included a proposed translation lacking the `的` present in the actual text, so exact grounding rejected it. String occurrence alone could still accept an overly broad alias such as `Northwater → 北水`.
+
+Both the baseline and separate extraction used `北水观测站` and `潮汐流量传感器` consistently in all three batches. The measured gain was successful propagation, with no improvement in consistency on this fixture and about twice the generation time. The next contrast needs an initially ambiguous later mention and a distinct combined prompt whose output contract is specified once. The raw output, timing, accepted and rejected candidates, and per-batch requests are in `.workspace/experiments/results/article-terminology.json`.

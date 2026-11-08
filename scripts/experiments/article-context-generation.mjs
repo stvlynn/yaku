@@ -6,6 +6,12 @@ import { resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { articleContextFixtures } from "./article-context-fixtures.mjs";
 import { saveResult } from "./harness.mjs";
+import { measureArticleTerminology } from "./article-terminology.mjs";
+
+const terminology = process.argv.includes("--terminology");
+const resultName = terminology
+  ? "article-terminology"
+  : "article-context-generation";
 
 const require = createRequire(import.meta.url);
 const wxtRequire = createRequire(require.resolve("wxt"));
@@ -112,7 +118,22 @@ try {
   const started = performance.now();
   result.model = await page.evaluate(() => window.prepareExperiment());
   result.modelPreparationMs = performance.now() - started;
-  for (const fixture of articleContextFixtures) {
+  if (terminology)
+    await measureArticleTerminology(
+      (input) =>
+        page.evaluate((input) => window.generateExperiment(input), input),
+      (observation) => {
+        result.fixtures = [
+          ...result.fixtures.filter((item) => item.arm !== observation.arm),
+          observation,
+        ];
+        saveResult(resultName, result);
+        console.log(
+          `${observation.arm}: ${observation.batches.length} batches`,
+        );
+      },
+    );
+  for (const fixture of terminology ? [] : articleContextFixtures) {
     const record = { ...fixture, variants: [] };
     result.fixtures.push(record);
     for (const protocol of ["plain", "json"]) {
@@ -169,7 +190,7 @@ try {
   result.errors.push(String(error));
   process.exitCode = 1;
 } finally {
-  saveResult("article-context-generation", result);
+  saveResult(resultName, result);
   await browser?.close();
   server.close();
 }
