@@ -11,7 +11,13 @@ export default defineBackground(() => {
   );
   const imageRequests = new Map<
     string,
-    { url: string; tab: number; frame: number; batch?: string }
+    {
+      url: string;
+      tab: number;
+      frame: number;
+      batch?: string;
+      inline?: boolean;
+    }
   >();
   const imageBatchKey = (id: string) => `imageBatch:${id}`;
   const getImageBatch = async (id: string) => {
@@ -179,6 +185,12 @@ export default defineBackground(() => {
           grant.frame !== sender.frameId
         )
           throw new Error(copy.imageTargetMissing);
+        if (
+          grant.inline &&
+          message.action !== "cancel-page-image" &&
+          !payload?.data?.startsWith("data:image/png;base64,")
+        )
+          throw new Error(copy.imageAccessFailed);
         await ensureModel();
         if (message.action === "cancel-page-image") {
           imageRequests.delete(payload!.id!);
@@ -204,7 +216,10 @@ export default defineBackground(() => {
             action: "translate-image",
             payload: {
               id: payload!.id,
-              url: grant.url.startsWith("blob:") ? payload!.data : grant.url,
+              url:
+                grant.inline || grant.url.startsWith("blob:")
+                  ? payload!.data
+                  : grant.url,
               settings,
             },
           });
@@ -295,6 +310,11 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     await chrome.contextMenus.removeAll();
     chrome.contextMenus.create({
+      id: "translate-screenshot",
+      title: copy.translateScreenshot,
+      contexts: ["page"],
+    });
+    chrome.contextMenus.create({
       id: "post-card",
       title: copy.postCard,
       contexts: ["page"],
@@ -364,6 +384,42 @@ export default defineBackground(() => {
     void sendToTab(command, tab);
   });
   chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "translate-screenshot" && tab?.id !== undefined) {
+      const tabId = tab.id;
+      const id = crypto.randomUUID();
+      void (async () => {
+        const [before] = await chrome.tabs.query({
+          windowId: tab.windowId,
+          active: true,
+        });
+        if (before?.id !== tabId) return;
+        const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: "png",
+        });
+        const [after] = await chrome.tabs.query({
+          windowId: tab.windowId,
+          active: true,
+        });
+        if (after?.id !== tabId || after.url !== before.url) return;
+        imageRequests.set(id, { url: "", inline: true, tab: tabId, frame: 0 });
+        try {
+          await chrome.tabs.sendMessage(
+            tabId,
+            {
+              destination: "content",
+              action: "select-screenshot-area",
+              payload: { id, screenshot },
+            },
+            { frameId: 0 },
+          );
+        } finally {
+          imageRequests.delete(id);
+        }
+      })().catch(() => {
+        void sendToTab("screenshot-unavailable", tab, 0).catch(() => {});
+      });
+      return;
+    }
     if (info.menuItemId === "translate-page-images" && tab?.id !== undefined) {
       const sessionId = crypto.randomUUID();
       const tabId = tab.id;

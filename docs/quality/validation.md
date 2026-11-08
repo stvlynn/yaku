@@ -36,6 +36,8 @@ The native PDF download test produced a two-page PDF with the source page's exac
 
 ## Acceptance still in progress
 
+- Screenshot-area translation is available from the Chrome page context menu. It captures the visible tab before opening a frozen selection surface, maps the pointer rectangle to capture pixels and reuses the local image OCR and translation pipeline. `scripts/experiments/screenshot-product.mjs` dispatched the registered menu handler in real Chrome, verified Escape produced no inference, dragged a real rectangle, and observed only `HELLO WORLD` in the actual model request. The rendered Chinese PNG measured 558 × 112 pixels. The test uses a seeded model and OCR language fixture. Native operating-system menu selection, high-DPI mapping and long-running picker behavior across worker suspension still need separate acceptance. [Chrome capture API](https://developer.chrome.com/docs/extensions/reference/api/tabs#method-captureVisibleTab)
+
 - Broader native editor/IME, subtitle-platform, PDF-layout and image-reader scenarios, including cases outside the recorded fixtures.
 - Original-extension runtime comparison and site-specific differences.
 - Remaining reference features and broader document fidelity. HTML/EPUB paragraph behavior is verified on the recorded fixtures; complete reader/layout/encoding coverage is not established. DOCX story traversal has structural tests; complete Word rendering and all document constructs are not established.

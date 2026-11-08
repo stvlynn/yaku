@@ -20,6 +20,7 @@ import {
   type Settings,
 } from "../entities/settings";
 import type { TemporaryTranslation } from "../features/temporary-translation";
+import { copy } from "../shared/i18n";
 
 export default defineContentScript({
   matches: ["<all_urls>"],
@@ -224,6 +225,36 @@ export default defineContentScript({
               );
               return;
             }
+            case "select-screenshot-area": {
+              const { id, screenshot } = message.payload as {
+                id: string;
+                screenshot: string;
+              };
+              const { translateScreenshot } =
+                await import("../features/screenshot-translation");
+              await translateScreenshot({
+                document,
+                screenshot,
+                theme: getSettings().theme,
+                translate: (data) =>
+                  request({
+                    destination: "background",
+                    action: "translate-page-image",
+                    payload: { id, data },
+                  }),
+                cancel: () => {
+                  void request({
+                    destination: "background",
+                    action: "cancel-page-image",
+                    payload: { id },
+                  }).catch(onError);
+                },
+              });
+              return;
+            }
+            case "screenshot-unavailable":
+              onError(new Error(copy.imageAccessFailed));
+              return;
             case "translate-whole-page":
               await translateManually(true);
               return page.isActive();
