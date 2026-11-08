@@ -295,6 +295,15 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     await chrome.contextMenus.removeAll();
     chrome.contextMenus.create({
+      id: "post-card",
+      title: copy.postCard,
+      contexts: ["page"],
+      documentUrlPatterns: [
+        "https://*.x.com/*/status/*",
+        "https://*.twitter.com/*/status/*",
+      ],
+    });
+    chrome.contextMenus.create({
       id: "toggle-page",
       title: copy.shortcutTogglePage,
       contexts: ["page"],

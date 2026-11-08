@@ -213,6 +213,15 @@ export default defineContentScript({
               );
               return;
             }
+            case "post-card": {
+              const { previewPostCard } = await import("../features/post-card");
+              await previewPostCard(
+                document,
+                getSettings().theme,
+                page.translatedPassages,
+              );
+              return;
+            }
             case "translate-whole-page":
               await translateManually(true);
               return page.isActive();

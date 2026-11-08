@@ -753,6 +753,24 @@ export function createPageTranslator({
 
   const controller = {
     isActive: () => active,
+    translatedPassages(root: Element) {
+      const passages = [...entries.values()].filter((entry) =>
+        root.contains(entry.block),
+      );
+      if (
+        !passages.length ||
+        passages.some(
+          (entry) => !entry.target?.isConnected || !sourceUnchanged(entry),
+        )
+      )
+        return;
+      return {
+        source: passages.map((entry) => entry.values.join("")).join("\n"),
+        translation: passages
+          .map((entry) => entry.target!.innerText)
+          .join("\n"),
+      };
+    },
     comparisonBlock() {
       const candidates = [...entries.values()].filter(
         (entry) => entry.target?.isConnected && entry.comparison,
