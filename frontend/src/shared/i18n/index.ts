@@ -248,6 +248,7 @@ export const copy = {
   inputSpaceKey: "Space",
   inputNoPrefix: "None",
   inputTargetLanguage: "Input translation language",
+  inputTranslationOptions: "Input translation options",
   inputMatchConversation: "Match conversation language",
   inputMatchPage: "Match page language",
   subtitles: "Bilingual subtitles",

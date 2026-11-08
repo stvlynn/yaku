@@ -56,6 +56,8 @@ export function installContextTranslation(options: {
     "select{max-width:100%;min-height:40px;padding:0 8px;font:inherit;font-size:13px;color:var(--foreground);background:var(--card);border:1px solid var(--border);border-radius:var(--radius-control)}select:focus-visible{outline:2px solid var(--ring);outline-offset:3px}";
   sheet.textContent +=
     'section[data-mode="input"]{width:max-content;max-width:calc(100vw - 12px);padding:6px}section[data-mode="input"] nav{justify-content:flex-start}section[data-mode="input"] p{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%)}';
+  sheet.textContent +=
+    'section[data-mode="input"] [hidden]{display:none}button[data-input-options]{display:inline-flex;align-items:center;gap:8px;border:0;box-shadow:none}button[data-input-options]::after{content:"";width:6px;height:6px;border:solid currentColor;border-width:0 1px 1px 0;transform:rotate(45deg) translateY(-2px)}';
   document.documentElement.append(host);
   let generation = 0;
   const requestSettingsKey = (settings = getSettings()) =>
@@ -81,6 +83,7 @@ export function installContextTranslation(options: {
   let inputEditor: HTMLElement | undefined;
   let resultEditor: HTMLElement | undefined;
   let stopPositioning: (() => void) | undefined;
+  let inputResultTimer: number | undefined;
   let selectedLanguage =
     document.documentElement.lang || view.navigator.language;
   let speechPanel:
@@ -287,6 +290,8 @@ export function installContextTranslation(options: {
     requestId = undefined;
     inputEditor = undefined;
     resultEditor = undefined;
+    view.clearTimeout(inputResultTimer);
+    inputResultTimer = undefined;
     stopPositioning?.();
     stopPositioning = undefined;
     host.style.removeProperty("inset");
@@ -666,9 +671,44 @@ export function installContextTranslation(options: {
           target.removeAttribute("aria-busy");
         });
     };
-    if (panel) {
-      panel.querySelector("nav")?.prepend(target, undo);
-      anchorInputResult(element, panel);
+    const result = panel;
+    const actions = result?.querySelector("nav");
+    if (result && actions) {
+      actions.prepend(target, undo);
+      if (!previous) {
+        actions.hidden = true;
+        actions.id = "input-translation-actions";
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.dataset.inputOptions = "";
+        chip.textContent =
+          target.selectedOptions[0]?.textContent ?? targetLanguage;
+        chip.setAttribute(
+          "aria-label",
+          `${copy.inputTranslationOptions}, ${chip.textContent}`,
+        );
+        chip.setAttribute("aria-controls", actions.id);
+        chip.setAttribute("aria-expanded", "false");
+        const expire = () => {
+          view.clearTimeout(inputResultTimer);
+          inputResultTimer = view.setTimeout(close, 5000);
+        };
+        chip.onfocus = () => view.clearTimeout(inputResultTimer);
+        chip.onblur = () => {
+          if (!chip.hidden && resultEditor === element && panel === result)
+            expire();
+        };
+        chip.onclick = () => {
+          view.clearTimeout(inputResultTimer);
+          chip.setAttribute("aria-expanded", "true");
+          chip.hidden = true;
+          actions.hidden = false;
+          target.focus();
+        };
+        result.append(chip);
+        expire();
+      }
+      anchorInputResult(element, result);
     }
     if (previous) {
       if (restoreTargetFocus) target.focus();

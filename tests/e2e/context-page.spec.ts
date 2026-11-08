@@ -54,18 +54,41 @@ async function panelText(page: Page) {
 async function clickContextButton(page: Page, name: string) {
   const cdp = await page.context().newCDPSession(page);
   try {
-    const tree = await cdp.send("Accessibility.getFullAXTree");
-    const matches = tree.nodes.filter(
-      (node) => node.role?.value === "button" && node.name?.value === name,
-    );
+    const buttons = async () =>
+      (await cdp.send("Accessibility.getFullAXTree")).nodes.filter(
+        (node) => node.role?.value === "button",
+      );
+    const click = async (backendNodeId: number) => {
+      const box = await cdp.send("DOM.getBoxModel", { backendNodeId });
+      await page.mouse.click(
+        (box.model.content[0]! + box.model.content[2]!) / 2,
+        (box.model.content[1]! + box.model.content[5]!) / 2,
+      );
+    };
+    let visible = await buttons();
+    if (
+      name === "Undo translation" &&
+      !visible.some((node) => node.name?.value === name)
+    ) {
+      const chip = visible.find((node) =>
+        String(node.name?.value).startsWith("Input translation options, "),
+      );
+      if (chip?.backendDOMNodeId) {
+        await click(chip.backendDOMNodeId);
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        visible = await buttons();
+      }
+    }
+    const matches = visible.filter((node) => node.name?.value === name);
     expect(matches).toHaveLength(1);
-    const box = await cdp.send("DOM.getBoxModel", {
-      backendNodeId: matches[0]!.backendDOMNodeId!,
-    });
-    await page.mouse.click(
-      (box.model.content[0]! + box.model.content[2]!) / 2,
-      (box.model.content[1]! + box.model.content[5]!) / 2,
-    );
+    await click(matches[0]!.backendDOMNodeId!);
   } finally {
     await cdp.detach();
   }
@@ -381,6 +404,20 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       await input.fill("Keep // Good morning.");
       await send("translate-input");
       await expect(input).toHaveValue(/^Keep .*早/u, { timeout: 180000 });
+      const compactTree = await inputCdp.send("Accessibility.getFullAXTree");
+      const chip = compactTree.nodes.find(
+        (node) => node.name?.value === "Input translation options, Chinese",
+      );
+      expect(chip?.backendDOMNodeId).toBeDefined();
+      expect(
+        compactTree.nodes.some(
+          (node) => node.name?.value === "Input translation language",
+        ),
+      ).toBe(false);
+      await inputCdp.send("DOM.focus", {
+        backendNodeId: chip!.backendDOMNodeId!,
+      });
+      await page.keyboard.press("Enter");
       const inputTree = await inputCdp.send("Accessibility.getFullAXTree");
       const inputLanguage = inputTree.nodes.find(
         (node) => node.name?.value === "Input translation language",
@@ -491,6 +528,12 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       await reply.fill("// Good morning.");
       await sendFixture(bridge, conversation, "translate-input");
       await expect(reply).toHaveValue(/早/u, { timeout: 180000 });
+      const compact = conversation
+        .locator('[data-yaku-owned="true"][style*="inset"]')
+        .first();
+      await expect(compact).toBeVisible();
+      await expect(compact).toHaveCount(0, { timeout: 7000 });
+      await expect(reply).toHaveValue(/早/u);
       const originalInputKeys = await bridge.evaluate(async () => {
         const stored = await chrome.storage.local.get("settings");
         const settings = stored.settings as Settings;

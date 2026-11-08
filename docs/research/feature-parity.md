@@ -86,7 +86,9 @@ The packaged desktop bar prefers the top edge of the editor with a 6 px gap, fli
 
 The packaged options offer slash, equals, semicolon, comma, period and colon for both key roles, plus Space for the trailing key and None for the prefix. Yaku prevents assigning the same punctuation to both roles and supports the packaged full-width punctuation aliases. A trusted sequence at the end of the editor removes exactly the three trigger characters from the model request and restores them on undo. The default remains slash and Space. The gesture uses a 200 ms interval on desktop and the artifact's 300 ms interval when Chrome reports a coarse primary pointer.
 
-Live platform checks, physical mobile input timing and the reference bar's collapsed and timed states remain open.
+The desktop input result starts as a compact current-language button. Opening it exposes the target and undo actions and keeps them visible. The unopened button expires after five seconds, with the timer paused while it has keyboard focus. The same editor transaction remains in use when the user expands the controls and changes the target. [WAI disclosure keyboard interaction](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
+
+Live platform checks, physical mobile input timing and the reference bar's searchable language menu remain open.
 
 ## Document and file matrix
 
