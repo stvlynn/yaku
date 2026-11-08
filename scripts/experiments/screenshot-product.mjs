@@ -7,6 +7,7 @@ import { launchExtension, requireCachedModel, saveResult } from "./harness.mjs";
 const result = { completed: false };
 const highDpi = process.argv.includes("--high-dpi");
 const restart = process.argv.includes("--restart-worker");
+const keyboard = process.argv.includes("--keyboard");
 let session;
 try {
   session = await launchExtension("options", highDpi ? 2 : 1);
@@ -61,20 +62,42 @@ try {
   await observeRequests(worker);
   const page = await context.newPage();
   await page.goto(url);
+  if (keyboard) {
+    await page.getByText("HELLO WORLD", { exact: true }).evaluate((element) => {
+      element.style.left = "calc(50% - 145px)";
+      element.style.top = "calc(50% - 30px)";
+      element.style.fontSize = "38px";
+    });
+    await page
+      .getByText("OUTSIDE REGION", { exact: true })
+      .evaluate((element) => {
+        element.style.top = "100px";
+      });
+  }
   await page.bringToFront();
   const tab = await bridge.evaluate(
     async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url),
     url,
   );
   assert.ok(tab);
+  if (keyboard) {
+    const commands = await bridge.evaluate(() => chrome.commands.getAll());
+    assert.ok(
+      commands.some((command) => command.name === "translate-screenshot"),
+    );
+  }
   const open = () =>
     worker.evaluate(
-      (tab) =>
-        chrome.contextMenus.onClicked.dispatch(
-          { menuItemId: "translate-screenshot", frameId: 0, editable: false },
-          tab,
-        ),
-      tab,
+      ({ tab, keyboard }) => {
+        if (keyboard)
+          chrome.commands.onCommand.dispatch("translate-screenshot", tab);
+        else
+          chrome.contextMenus.onClicked.dispatch(
+            { menuItemId: "translate-screenshot", frameId: 0, editable: false },
+            tab,
+          );
+      },
+      { tab, keyboard },
     );
   const dialog = page.getByRole("dialog", {
     name: "Translate screenshot area",
@@ -129,16 +152,26 @@ try {
     await observeRequests(worker);
     result.workerRestarted = true;
   }
-  await page.mouse.move(42, 58);
-  await page.mouse.down();
-  await page.mouse.move(600, 170, { steps: 8 });
-  await page.mouse.up();
+  if (keyboard) {
+    await expect(dialog.locator("canvas")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    result.keyboardSelection = true;
+  } else {
+    await page.mouse.move(42, 58);
+    await page.mouse.down();
+    await page.mouse.move(600, 170, { steps: 8 });
+    await page.mouse.up();
+  }
   await expect(
     dialog.getByRole("img", { name: "Translated screenshot" }),
   ).toBeVisible({ timeout: 90000 });
   const requests = await worker.evaluate(() => globalThis.screenshotRequests);
   assert.ok(requests.some((text) => /HELLO WORLD/i.test(text)));
   assert.ok(requests.every((text) => !/OUTSIDE REGION/i.test(text)));
+  if (keyboard) assert.deepEqual(requests, ["HELLO WORLD"]);
   result.recognized = requests;
   await dialog.screenshot({
     path: ".workspace/qa/screenshot-translation-preview.png",
@@ -151,7 +184,9 @@ try {
   result.dimensions = [png.readUInt32BE(16), png.readUInt32BE(20)];
   assert.deepEqual(
     result.dimensions,
-    [558, 112].map((size) => size * (highDpi ? 2 : 1)),
+    (keyboard ? [376, 160] : [558, 112]).map(
+      (size) => size * (highDpi ? 2 : 1),
+    ),
   );
   result.completed = true;
 } catch (error) {
@@ -159,7 +194,11 @@ try {
   process.exitCode = 1;
 } finally {
   saveResult(
-    highDpi || restart ? "screenshot-lifecycle-product" : "screenshot-product",
+    keyboard
+      ? "screenshot-keyboard-product"
+      : highDpi || restart
+        ? "screenshot-lifecycle-product"
+        : "screenshot-product",
     result,
   );
   console.log(JSON.stringify(result));

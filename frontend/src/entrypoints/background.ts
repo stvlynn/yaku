@@ -401,11 +401,8 @@ export default defineBackground(() => {
         frameId === undefined ? {} : { frameId },
       );
   };
-  chrome.commands.onCommand.addListener((command, tab) => {
-    void sendToTab(command, tab);
-  });
-  chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "translate-screenshot" && tab?.id !== undefined) {
+  const captureScreenshot = (tab?: chrome.tabs.Tab) => {
+    if (tab?.id !== undefined) {
       const tabId = tab.id;
       const id = crypto.randomUUID();
       void (async () => {
@@ -443,6 +440,15 @@ export default defineBackground(() => {
       })().catch(() => {
         void sendToTab("screenshot-unavailable", tab, 0).catch(() => {});
       });
+    }
+  };
+  chrome.commands.onCommand.addListener((command, tab) => {
+    if (command === "translate-screenshot") captureScreenshot(tab);
+    else void sendToTab(command, tab);
+  });
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "translate-screenshot") {
+      captureScreenshot(tab);
       return;
     }
     if (info.menuItemId === "translate-page-images" && tab?.id !== undefined) {

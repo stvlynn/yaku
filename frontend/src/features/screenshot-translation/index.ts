@@ -30,6 +30,8 @@ export async function translateScreenshot(options: {
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
+  canvas.tabIndex = 0;
+  canvas.setAttribute("aria-label", copy.screenshotKeyboard);
   const context = canvas.getContext("2d")!;
   context.drawImage(bitmap, 0, 0);
   bitmap.close();
@@ -97,9 +99,13 @@ export async function translateScreenshot(options: {
       start = undefined;
       area.hidden = true;
     };
-    canvas.onpointerup = async (event) => {
-      if (start?.pointer !== event.pointerId) return;
-      const { left, top, width, height, bounds } = rectangle(event);
+    async function submit({
+      left,
+      top,
+      width,
+      height,
+      bounds,
+    }: ReturnType<typeof rectangle>) {
       start = undefined;
       area.hidden = true;
       if (width < 1 || height < 1) return;
@@ -159,7 +165,62 @@ export async function translateScreenshot(options: {
       } finally {
         close.textContent = copy.close;
       }
+    }
+    canvas.onpointerup = (event) => {
+      if (start?.pointer === event.pointerId) void submit(rectangle(event));
+    };
+    let keyboardArea:
+      { left: number; top: number; width: number; height: number } | undefined;
+    canvas.onkeydown = (event) => {
+      if (
+        !dialog.hasAttribute("data-selecting") ||
+        !["Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+          event.key,
+        )
+      )
+        return;
+      event.preventDefault();
+      const bounds = canvas.getBoundingClientRect();
+      const width = Math.min(360, bounds.width);
+      const height = Math.min(160, bounds.height);
+      const rect = keyboardArea ?? {
+        left: (bounds.width - width) / 2,
+        top: (bounds.height - height) / 2,
+        width,
+        height,
+      };
+      if (event.key === "Enter" && keyboardArea) {
+        void submit({ ...rect, bounds });
+        return;
+      }
+      const dx =
+        event.key === "ArrowLeft" ? -16 : event.key === "ArrowRight" ? 16 : 0;
+      const dy =
+        event.key === "ArrowUp" ? -16 : event.key === "ArrowDown" ? 16 : 0;
+      const clamp = (value: number, max: number) =>
+        Math.min(Math.max(0, max), Math.max(0, value));
+      rect.left = clamp(rect.left, bounds.width - 1);
+      rect.top = clamp(rect.top, bounds.height - 1);
+      rect.width = Math.max(
+        1,
+        clamp(rect.width + (event.shiftKey ? dx : 0), bounds.width - rect.left),
+      );
+      rect.height = Math.max(
+        1,
+        clamp(
+          rect.height + (event.shiftKey ? dy : 0),
+          bounds.height - rect.top,
+        ),
+      );
+      if (!event.shiftKey) {
+        rect.left = clamp(rect.left + dx, bounds.width - rect.width);
+        rect.top = clamp(rect.top + dy, bounds.height - rect.height);
+      }
+      keyboardArea = rect;
+      area.hidden = false;
+      area.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`;
     };
     dialog.showModal();
+    canvas.focus();
   });
 }

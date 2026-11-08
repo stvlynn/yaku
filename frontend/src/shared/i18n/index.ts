@@ -6,6 +6,8 @@ export const copy = {
   postCard: "Bilingual post card",
   translateScreenshot: "Translate screenshot area",
   translatedScreenshot: "Translated screenshot",
+  screenshotKeyboard:
+    "Screenshot area. Use arrow keys to move, Shift and arrow keys to resize, and Enter to translate.",
   savePostCard: "Save image",
   sharePostCard: "Share image",
   sharePostCardFailed: "Could not share the image.",

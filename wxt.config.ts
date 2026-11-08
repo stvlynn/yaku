@@ -33,6 +33,7 @@ export default defineConfig({
       "scripting",
     ],
     commands: {
+      "translate-screenshot": { description: copy.translateScreenshot },
       "toggle-page": {
         suggested_key: { default: "Alt+A" },
         description: copy.shortcutTogglePage,
