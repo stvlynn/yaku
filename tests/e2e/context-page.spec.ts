@@ -176,6 +176,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
             hoverEnabled: true,
             selectionEnabled: true,
             inputEnabled: true,
+            inputTargetLanguage: "zh",
             autoTranslate: false,
             mode: "bilingual",
             glossary: {},
@@ -333,6 +334,38 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       evidence.inputSpaceTrigger = await input.inputValue();
       await clickContextButton(page, "Undo translation");
       await expect(input).toHaveValue("Hello friend.   ");
+      await input.fill("Keep // Good morning.");
+      await send("translate-input");
+      await expect(input).toHaveValue(/^Keep .*早/u, { timeout: 180000 });
+      const inputTree = await inputCdp.send("Accessibility.getFullAXTree");
+      const inputLanguage = inputTree.nodes.find(
+        (node) => node.name?.value === "Input translation language",
+      );
+      expect(inputLanguage?.backendDOMNodeId).toBeDefined();
+      await inputCdp.send("DOM.focus", {
+        backendNodeId: inputLanguage!.backendDOMNodeId!,
+      });
+      await page.keyboard.press("j");
+      await expect(input).toHaveValue(/^Keep .*おはよう/u, { timeout: 180000 });
+      await expect
+        .poll(() =>
+          bridge!.evaluate(async () => {
+            const stored = await chrome.storage.local.get("settings");
+            return (stored.settings as Settings).inputTargetLanguage;
+          }),
+        )
+        .toBe("ja");
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue("Keep // Good morning.");
+      await bridge.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        await chrome.storage.local.set({
+          settings: {
+            ...(stored.settings as Settings),
+            inputTargetLanguage: "zh",
+          },
+        });
+      });
       await inputCdp.detach();
       const rich = page.locator("#rich");
       const originalRich = await rich.innerHTML();

@@ -74,7 +74,11 @@ Observed theme identifiers (labels are summarized, not artwork): none, grey, das
 
 The supplied input defaults name `/` as the starting key and Space as the trailing key, with three repetitions and a 200 ms desktop interval between presses. English locale descriptions distinguish `//` for a suffix and `/ja` for a target-language override. Yaku accepts those directives through the input-translation command, context action and Space gesture. It uses the last recognized directive at a whitespace boundary, which keeps slashes inside URLs out of the directive parser.
 
-The Space gesture counts browser-confirmed edits at the end of the same focused editor. Counting keydowns alone would also count prevented edits and held-key repeats. Counting input events alone would miss the repeat flag. Yaku observes the actual input and uses the keyboard repeat signal to reset the sequence. The existing transaction preserves the full original editor state for undo, including the three spaces, and omits trailing whitespace from the model request. The gesture can be disabled separately in settings. The installed reference's mobile timing, configurable delimiters and target language bar still need interaction coverage.
+The Space gesture counts browser-confirmed edits at the end of the same focused editor. Counting keydowns alone would also count prevented edits and held-key repeats. Counting input events alone would miss the repeat flag. Yaku observes the actual input and uses the keyboard repeat signal to reset the sequence. The existing transaction preserves the full original editor state for undo, including the three spaces, and omits trailing whitespace from the model request. The gesture can be disabled separately in settings.
+
+The supplied artifact sets the independent input target to English. Its desktop result bar retranslates the original input when the user changes the target, then persists the successful manual choice. Yaku uses the same source snapshot for each target, resolves terminology for the selected target, and restores the original editor with one undo. Inline language directives take precedence over the saved default for the initial request.
+
+The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Its page-language fallback is separately configurable and disabled by default. That automatic choice, selected-only input translation, the bar's editor-relative placement, configurable delimiters and mobile timing remain open.
 
 ## Document and file matrix
 

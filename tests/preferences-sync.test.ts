@@ -108,6 +108,7 @@ describe("browser preference sync", () => {
   it("loads a version 3 snapshot written before the Space trigger preference", () => {
     const {
       inputSpaceTrigger: _trigger,
+      inputTargetLanguage: _inputLanguage,
       syncPreferences: _sync,
       ...previousSettings
     } = defaultSettings;

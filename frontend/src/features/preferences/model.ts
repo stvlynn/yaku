@@ -90,6 +90,7 @@ export function validateSettings(value: unknown): Settings {
     throw new Error(copy.invalidSettings);
   if (
     !codes.has(result.targetLanguage) ||
+    !codes.has(result.inputTargetLanguage) ||
     !(result.sourceLanguage === "auto" || codes.has(result.sourceLanguage)) ||
     !["bilingual", "translation"].includes(result.mode) ||
     !["plain", "underline", "highlight", "quote", "blur"].includes(

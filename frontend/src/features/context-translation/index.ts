@@ -1,6 +1,7 @@
 import type { Settings } from "../../entities/settings";
 import type { Translate } from "../../entities/translation";
 import { copy } from "../../shared/i18n";
+import { languages } from "../../shared/languages";
 import { createRequestId } from "../../shared/request-id";
 import { contentThemeCss } from "../../shared/styles/content-theme";
 import {
@@ -16,8 +17,18 @@ export function installContextTranslation(options: {
   translate: Translate;
   onError: (error: unknown) => void;
   cancel?: (id: string) => Promise<void>;
+  saveInputTargetLanguage?: (language: string) => Promise<void>;
+  inputGlossary?: (language: string) => Settings["glossary"];
 }) {
-  const { document, getSettings, translate, onError, cancel } = options;
+  const {
+    document,
+    getSettings,
+    translate,
+    onError,
+    cancel,
+    saveInputTargetLanguage,
+    inputGlossary,
+  } = options;
   const view = document.defaultView!;
   const host = document.createElement("div");
   host.dataset.yakuOwned = "true";
@@ -25,6 +36,8 @@ export function installContextTranslation(options: {
   const sheet = document.createElement("style");
   sheet.textContent = `${contentThemeCss}:host{position:fixed;z-index:2147483647;inset:auto 20px 82px auto}section{width:420px;max-width:calc(100vw - 40px);max-height:60vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-card);padding:16px;box-shadow:var(--shadow-2)}p{white-space:pre-wrap;margin:0 0 16px;line-height:1.7;font-size:14px}nav{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}`;
   shadow.append(sheet);
+  sheet.textContent +=
+    "select{max-width:100%;min-height:40px;padding:0 8px;font:inherit;font-size:13px;color:var(--foreground);background:var(--card);border:1px solid var(--border);border-radius:var(--radius-control)}select:focus-visible{outline:2px solid var(--ring);outline-offset:3px}";
   document.documentElement.append(host);
   let generation = 0;
   const requestSettingsKey = (settings = getSettings()) =>
@@ -419,10 +432,28 @@ export function installContextTranslation(options: {
       return;
     }
     if (!snapshot?.text.trim()) return;
+    await translateInputSnapshot(
+      snapshot,
+      spaceTriggered ? snapshot.text.trimEnd() : snapshot.text,
+      snapshot.targetLanguage ?? getSettings().inputTargetLanguage,
+    );
+  }
+  async function translateInputSnapshot(
+    snapshot: NonNullable<ReturnType<typeof editors.capture>>,
+    text: string,
+    targetLanguage: string,
+    previous?: NonNullable<ReturnType<typeof editors.apply>>,
+  ) {
+    const { element } = snapshot;
+    const isCurrent = previous?.canUndo ?? (() => editors.current(snapshot));
     const settings = getSettings();
-    const targetLanguage = snapshot.targetLanguage ?? settings.targetLanguage;
+    if (!isCurrent() || !settings.inputEnabled || !allowed(element, true)) {
+      close();
+      return;
+    }
+    const glossary = inputGlossary?.(targetLanguage) ?? settings.glossary;
     const settingsKey = requestSettingsKey(settings);
-    show(copy.translating, false, true);
+    if (!previous) show(copy.translating, false, true);
     const revision = generation;
     const id = createRequestId();
     requestId = id;
@@ -431,15 +462,15 @@ export function installContextTranslation(options: {
     try {
       output = await translate({
         id,
-        text: spaceTriggered ? snapshot.text.trimEnd() : snapshot.text,
+        text,
         sourceLanguage: settings.sourceLanguage,
         context: snapshot.codec?.instruction,
         targetLanguage,
-        glossary: settings.glossary,
+        glossary,
       });
     } catch (error) {
       if (!currentRequest(revision, settingsKey)) return;
-      if (generation === revision)
+      if (!previous)
         show(error instanceof Error ? error.message : String(error));
       throw error;
     } finally {
@@ -449,13 +480,21 @@ export function installContextTranslation(options: {
       }
     }
     if (!currentRequest(revision, settingsKey)) return;
-    if (!editors.current(snapshot)) {
+    const currentSettings = getSettings();
+    if (
+      !isCurrent() ||
+      !currentSettings.inputEnabled ||
+      currentSettings.inputTargetLanguage !== settings.inputTargetLanguage ||
+      JSON.stringify(
+        inputGlossary?.(targetLanguage) ?? currentSettings.glossary,
+      ) !== JSON.stringify(glossary)
+    ) {
       close();
       return;
     }
     let transaction: ReturnType<typeof editors.apply>;
     try {
-      transaction = editors.apply(snapshot, output.text);
+      transaction = editors.apply(snapshot, output.text, isCurrent);
     } catch (error) {
       show(error instanceof Error ? error.message : String(error));
       onError(error);
@@ -465,6 +504,7 @@ export function installContextTranslation(options: {
       close();
       return;
     }
+    const restoreTargetFocus = shadow.activeElement?.localName === "select";
     show(transaction.text, false, false, targetLanguage);
     const undo = document.createElement("button");
     undo.textContent = copy.undoInput;
@@ -475,7 +515,26 @@ export function installContextTranslation(options: {
       }
       if (transaction.undo()) close();
     };
-    panel?.querySelector("nav")?.prepend(undo);
+    const target = document.createElement("select");
+    target.setAttribute("aria-label", copy.inputTargetLanguage);
+    for (const [code, label] of languages)
+      target.add(new view.Option(label, code, false, code === targetLanguage));
+    target.onchange = () => {
+      if (target.getAttribute("aria-busy") === "true") return;
+      target.setAttribute("aria-busy", "true");
+      void translateInputSnapshot(snapshot, text, target.value, transaction)
+        .catch(onError)
+        .finally(() => {
+          if (!target.isConnected) return;
+          target.value = targetLanguage;
+          target.removeAttribute("aria-busy");
+        });
+    };
+    panel?.querySelector("nav")?.prepend(target, undo);
+    if (previous) {
+      if (restoreTargetFocus) target.focus();
+      await saveInputTargetLanguage?.(targetLanguage);
+    }
   }
   return {
     translateSelection: () => {

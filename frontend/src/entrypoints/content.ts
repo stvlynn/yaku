@@ -11,7 +11,11 @@ import {
 } from "../features/video-subtitles";
 import { installFloatingControl } from "../features/floating-control";
 import { installPageImages } from "../features/page-images";
-import { readSettings, onSettingsChanged } from "../features/preferences";
+import {
+  readSettings,
+  saveSettings,
+  onSettingsChanged,
+} from "../features/preferences";
 import { request, isEnvelope, errorReply } from "../shared/messaging";
 import type { Translate } from "../entities/translation";
 import {
@@ -73,6 +77,13 @@ export default defineContentScript({
       translate,
       getSettings,
       onError,
+      inputGlossary: (targetLanguage) =>
+        resolveGlossary(settings, { targetLanguage, url: location.href }),
+      saveInputTargetLanguage: async (inputTargetLanguage) => {
+        const latest = await readSettings();
+        if (latest.inputTargetLanguage !== inputTargetLanguage)
+          await saveSettings({ ...latest, inputTargetLanguage });
+      },
       cancel: (payload) =>
         request<void>({ destination: "background", action: "cancel", payload }),
     });

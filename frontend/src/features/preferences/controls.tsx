@@ -1,6 +1,6 @@
 import { copy } from "../../shared/i18n";
-import { Group, Toggle } from "../../shared/ui";
-import type { PreferencesProps } from "./contracts";
+import { Choice, Group, SettingRow, Toggle } from "../../shared/ui";
+import { languageOptions, type PreferencesProps } from "./contracts";
 export function ActivationPreferences({
   preferences,
   onPreferencesChange,
@@ -25,6 +25,16 @@ export function ActivationPreferences({
           onChange={(checked) => onPreferencesChange({ [key]: checked })}
         />
       ))}
+      <SettingRow label={copy.inputTargetLanguage}>
+        <Choice
+          label={copy.inputTargetLanguage}
+          value={preferences.inputTargetLanguage}
+          options={languageOptions}
+          onChange={(inputTargetLanguage) =>
+            onPreferencesChange({ inputTargetLanguage })
+          }
+        />
+      </SettingRow>
     </Group>
   );
 }

@@ -245,14 +245,18 @@ export function createEditorTracker(
       value,
     );
   }
-  function apply(snapshot: Snapshot, translated: string) {
-    if (!current(snapshot)) return;
+  function apply(
+    snapshot: Snapshot,
+    translated: string,
+    isCurrent = () => current(snapshot),
+  ) {
+    if (!isCurrent()) return;
     const { element } = snapshot;
     const fragment = snapshot.codec?.decode(translated);
     const plain = fragment?.textContent ?? translated;
     if (
       !emit(element, "beforeinput", "insertReplacementText", plain, true) ||
-      !current(snapshot)
+      !isCurrent()
     )
       return;
     if (snapshot.native)

@@ -112,6 +112,7 @@ export function decodeSyncedSettings(
         (key) =>
           key !== "syncPreferences" &&
           key !== "inputSpaceTrigger" &&
+          key !== "inputTargetLanguage" &&
           !Object.hasOwn(value, key),
       )
     )

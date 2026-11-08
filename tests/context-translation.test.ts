@@ -57,6 +57,51 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it("retargets from the original suffix, remembers the choice, and undoes both translations", async () => {
+    document.body.innerHTML = "<textarea>Keep // Good morning</textarea>";
+    const editor = document.querySelector("textarea")!;
+    editor.focus();
+    const run = vi.fn<Translate>(async (request) => ({
+      id: request.id,
+      text: request.targetLanguage === "ja" ? "おはよう" : "早上好",
+      elapsedMs: 0,
+    }));
+    const saveInputTargetLanguage = vi.fn(async () => {});
+    const onError = vi.fn();
+    const controller = installContextTranslation({
+      document,
+      translate: run,
+      getSettings: () => ({ ...defaultSettings, inputTargetLanguage: "zh" }),
+      onError,
+      saveInputTargetLanguage,
+    });
+    controllers.push(controller);
+    await controller.translateInput();
+    expect(editor.value).toBe("Keep 早上好");
+    const language = shadow().querySelector("select")!;
+    run.mockRejectedValueOnce(new Error("Model unavailable"));
+    language.value = "ja";
+    language.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(language.value).toBe("zh"));
+    expect(editor.value).toBe("Keep 早上好");
+    expect(onError).toHaveBeenCalledOnce();
+    expect(saveInputTargetLanguage).not.toHaveBeenCalled();
+    language.value = "ja";
+    language.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(editor.value).toBe("Keep おはよう"));
+    expect(
+      run.mock.calls.map(([request]) => [request.targetLanguage, request.text]),
+    ).toEqual([
+      ["zh", "Good morning"],
+      ["ja", "Good morning"],
+      ["ja", "Good morning"],
+    ]);
+    expect(saveInputTargetLanguage).toHaveBeenCalledWith("ja");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.value).toBe("Keep // Good morning");
+  });
   it("translates only the suffix and restores the exact native value on undo", async () => {
     document.body.innerHTML = "<textarea></textarea>";
     const editor = document.querySelector("textarea")!;
