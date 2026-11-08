@@ -1,3 +1,11 @@
+import {
+  autoUpdate,
+  computePosition,
+  flip,
+  hide,
+  offset,
+  shift,
+} from "@floating-ui/dom";
 import type { Settings } from "../../entities/settings";
 import type { Translate } from "../../entities/translation";
 import { copy } from "../../shared/i18n";
@@ -41,6 +49,8 @@ export function installContextTranslation(options: {
   shadow.append(sheet);
   sheet.textContent +=
     "select{max-width:100%;min-height:40px;padding:0 8px;font:inherit;font-size:13px;color:var(--foreground);background:var(--card);border:1px solid var(--border);border-radius:var(--radius-control)}select:focus-visible{outline:2px solid var(--ring);outline-offset:3px}";
+  sheet.textContent +=
+    'section[data-mode="input"]{width:max-content;max-width:calc(100vw - 12px);padding:6px}section[data-mode="input"] nav{justify-content:flex-start}section[data-mode="input"] p{position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%)}';
   document.documentElement.append(host);
   let generation = 0;
   const requestSettingsKey = (settings = getSettings()) =>
@@ -64,6 +74,8 @@ export function installContextTranslation(options: {
   let hoverResult: Element | undefined;
   let requestId: string | undefined;
   let inputEditor: HTMLElement | undefined;
+  let resultEditor: HTMLElement | undefined;
+  let stopPositioning: (() => void) | undefined;
   let selectedLanguage =
     document.documentElement.lang || view.navigator.language;
   let speechPanel:
@@ -82,6 +94,7 @@ export function installContextTranslation(options: {
   const editors = createEditorTracker(document, signal, (element, event) => {
     if (element === inputEditor && requestId) close();
     if (event.type === "beforeinput") return;
+    if (element === resultEditor) close();
     const settings = getSettings();
     if (
       !(event instanceof view.InputEvent) ||
@@ -110,9 +123,15 @@ export function installContextTranslation(options: {
   for (const type of ["focusout", "pointerdown", "keyup"] as const)
     document.addEventListener(
       type,
-      () => {
+      (event) => {
         repeatingSpace = false;
         if (type !== "keyup") spaces = undefined;
+        if (
+          type === "pointerdown" &&
+          resultEditor &&
+          !event.composedPath().includes(host)
+        )
+          close();
       },
       { capture: true, signal },
     );
@@ -246,10 +265,45 @@ export function installContextTranslation(options: {
     if (requestId) void cancel?.(requestId).catch(onError);
     requestId = undefined;
     inputEditor = undefined;
+    resultEditor = undefined;
+    stopPositioning?.();
+    stopPositioning = undefined;
+    host.style.removeProperty("inset");
+    host.style.removeProperty("visibility");
     view.speechSynthesis?.cancel();
     speechPanel = undefined;
     panel?.remove();
     panel = undefined;
+  }
+  function anchorInputResult(editor: HTMLElement, result: HTMLElement) {
+    resultEditor = editor;
+    result.dataset.mode = "input";
+    host.style.inset = "0 auto auto 0";
+    host.style.visibility = "hidden";
+    stopPositioning = autoUpdate(editor, host, () => {
+      if (!editor.isConnected) {
+        close();
+        return;
+      }
+      void computePosition(editor, host, {
+        strategy: "fixed",
+        placement: "top-start",
+        middleware: [
+          offset(6),
+          flip({ padding: 6, crossAxis: false }),
+          shift({ padding: 6, crossAxis: true }),
+          hide(),
+        ],
+      })
+        .then(({ x, y, middlewareData }) => {
+          if (panel !== result) return;
+          host.style.inset = `${y}px auto auto ${x}px`;
+          host.style.visibility = middlewareData.hide?.referenceHidden
+            ? "hidden"
+            : "visible";
+        })
+        .catch(onError);
+    });
   }
   function show(
     text: string,
@@ -595,7 +649,10 @@ export function installContextTranslation(options: {
           target.removeAttribute("aria-busy");
         });
     };
-    panel?.querySelector("nav")?.prepend(target, undo);
+    if (panel) {
+      panel.querySelector("nav")?.prepend(target, undo);
+      anchorInputResult(element, panel);
+    }
     if (previous) {
       if (restoreTargetFocus) target.focus();
       await saveInputTargetLanguage?.(targetLanguage);

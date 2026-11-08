@@ -11,6 +11,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.0.0
         version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@floating-ui/dom':
+        specifier: 1.8.0
+        version: 1.8.0
       '@huggingface/transformers':
         specifier: 4.3.2
         version: 4.3.2(@types/node@26.6.6)

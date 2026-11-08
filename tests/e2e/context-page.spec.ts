@@ -304,6 +304,30 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       await send("translate-input");
       await expect(input).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
       evidence.inputTranslation = await input.inputValue();
+      const inputToolbar = page
+        .locator('[data-yaku-owned="true"][style*="inset"]')
+        .first();
+      await expect(inputToolbar).toBeVisible();
+      await expect
+        .poll(async () => {
+          const editor = await input.boundingBox();
+          const toolbar = await inputToolbar.boundingBox();
+          return editor && toolbar
+            ? Math.round(editor.y - toolbar.y - toolbar.height)
+            : null;
+        })
+        .toBe(6);
+      const beforeScroll = (await inputToolbar.boundingBox())!.y;
+      await page.evaluate(() => {
+        document.body.style.minHeight = "200vh";
+        window.scrollTo(0, 30);
+      });
+      await expect
+        .poll(async () => {
+          const toolbar = await inputToolbar.boundingBox();
+          return toolbar && Math.round(beforeScroll - toolbar.y);
+        })
+        .toBe(30);
       await clickContextButton(page, "Undo translation");
       expect(await input.inputValue()).toBe("Hello friend.");
       const suffixSource = "Keep https://example.test/info. /ja Good morning.";
@@ -328,12 +352,30 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       await page.keyboard.type("   ");
       await expect(input).toHaveValue("   Hello friend.");
       expect(await panelText(page)).toBe("");
+      await input.evaluate((element) => {
+        element.style.cssText = "position:fixed;top:2px;right:0";
+      });
       await input.fill("Hello friend.");
       await page.keyboard.type("   ");
       await expect(input).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
       evidence.inputSpaceTrigger = await input.inputValue();
+      await expect(inputToolbar).toBeVisible();
+      await expect
+        .poll(async () => {
+          const editor = await input.boundingBox();
+          const toolbar = await inputToolbar.boundingBox();
+          return editor && toolbar
+            ? Math.round(toolbar.y - editor.y - editor.height)
+            : null;
+        })
+        .toBe(6);
+      const toolbar = (await inputToolbar.boundingBox())!;
+      expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
+        (await page.evaluate(() => document.documentElement.clientWidth)) - 5,
+      );
       await clickContextButton(page, "Undo translation");
       await expect(input).toHaveValue("Hello friend.   ");
+      await input.evaluate((element) => element.removeAttribute("style"));
       await input.fill("Keep // Good morning.");
       await send("translate-input");
       await expect(input).toHaveValue(/^Keep .*早/u, { timeout: 180000 });

@@ -82,7 +82,9 @@ The reference's input demo advertises translating the selected part with the sho
 
 The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Yaku looks for the source nearest the composer where a reply scope is available, then samples recent source messages or the post description according to the site. It excludes extension-generated translation and editable text, checks Chrome's local language observation, and retains the saved target if the inference would match the draft language. The separately configurable page fallback defaults to off. The Chrome fixture contrasts a Japanese reply thread with an English video description and verifies that the reply uses Japanese while `//` uses the saved target. [Chrome language detection](https://developer.chrome.com/docs/extensions/reference/api/i18n#method-detectLanguage)
 
-Live platform checks, the bar's editor-relative placement, configurable delimiters and mobile timing remain open.
+The packaged desktop bar prefers the top edge of the editor with a 6 px gap, flips below near the viewport top and clamps at viewport edges. Yaku anchors the existing result actions using the Floating UI version already resolved by Base UI. Position updates follow scrolling, resize and layout shifts while the bar is mounted. The translated text stays in the editor and remains available to assistive technology and result actions. Editing or clicking away dismisses the bar. [Floating UI positioning lifecycle](https://floating-ui.com/docs/autoupdate)
+
+Live platform checks, the reference bar's collapsed and timed states, configurable delimiters and mobile timing remain open.
 
 ## Document and file matrix
 

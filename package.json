@@ -25,6 +25,7 @@
   "type": "module",
   "dependencies": {
     "@base-ui/react": "^1.0.0",
+    "@floating-ui/dom": "1.8.0",
     "@huggingface/transformers": "4.3.2",
     "fflate": "^0.8.3",
     "lucide-react": "^0.468.0",
