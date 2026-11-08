@@ -9,14 +9,16 @@ export interface TranslationRequest {
   sourceLanguage?: string;
   context?: string;
   articleBackground?: { title: string; nearby: readonly string[] };
+  terminologyEvidence?: { translation: string; later: readonly string[] };
   glossary?: Record<string, string>;
-  task?: "translate" | "rewrite" | "explain";
+  task?: "translate" | "rewrite" | "explain" | "extract-terminology";
   writingStyle?: "grammar" | "polite" | "concise" | "formal";
 }
 export interface TranslationResult {
   id: string;
   text: string;
   elapsedMs: number;
+  terms?: Record<string, string>;
 }
 export interface ModelStatus {
   phase: "idle" | "downloading" | "loading" | "ready" | "translating" | "error";
