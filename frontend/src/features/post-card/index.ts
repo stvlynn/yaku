@@ -1,6 +1,7 @@
 import { copy } from "../../shared/i18n";
 import { contentThemeCss } from "../../shared/styles/content-theme";
 import { wrapText } from "../../shared/text-layout";
+import { drawContained, readPostMedia } from "./media";
 
 type Passage = { source: string; translation: string };
 
@@ -32,12 +33,18 @@ export async function previewPostCard(
   );
   const post = article?.querySelector('[data-testid="tweetText"]');
   const passage = post && read(post);
-  if (!post || !passage?.source.trim() || !passage.translation.trim())
+  if (
+    !article ||
+    !post ||
+    !passage?.source.trim() ||
+    !passage.translation.trim()
+  )
     throw new Error(copy.postCardUnavailable);
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error(copy.postCardUnavailable);
+  const { avatar, photos } = await readPostMedia(article);
   const width = 800;
   const margin = 44;
   const font = '28px system-ui, "Segoe UI", sans-serif';
@@ -51,15 +58,47 @@ export async function previewPostCard(
   const qr = encode(permalink, { border: 4, ecc: "M" }).data;
   const moduleSize = 4;
   const qrSize = qr.length * moduleSize;
+  const columns = photos.length === 1 ? 1 : 2;
+  const photoWidth = (width - margin * 2 - (columns - 1) * 12) / columns;
+  const photoHeight =
+    photos.length === 1
+      ? Math.min(420, (photoWidth * photos[0]!.height) / photos[0]!.width)
+      : 224;
+  const mediaHeight = photos.length
+    ? Math.ceil(photos.length / columns) * (photoHeight + 12)
+    : 0;
   const height =
-    170 + qrSize + lines.reduce((sum, block) => sum + block.length * 42, 0);
+    170 +
+    qrSize +
+    mediaHeight +
+    lines.reduce((sum, block) => sum + block.length * 42, 0);
   canvas.width = width;
   canvas.height = height;
   ctx.fillStyle = "#faf8f3";
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#1d1b18";
   ctx.font = "600 26px system-ui";
-  ctx.fillText(`@${account}`, margin, 58);
+  if (avatar) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(margin + 22, 49, 22, 0, 2 * Math.PI);
+    ctx.clip();
+    const side = Math.min(avatar.width, avatar.height);
+    ctx.drawImage(
+      avatar,
+      (avatar.width - side) / 2,
+      (avatar.height - side) / 2,
+      side,
+      side,
+      margin,
+      27,
+      44,
+      44,
+    );
+    ctx.restore();
+    avatar.close();
+  }
+  ctx.fillText(`@${account}`, margin + (avatar ? 56 : 0), 58);
   ctx.font = font;
   let y = 105;
   for (const [index, block] of lines.entries()) {
@@ -79,6 +118,17 @@ export async function previewPostCard(
       ctx.fillText(line, ctx.direction === "rtl" ? width - margin : margin, y);
       y += 42;
     }
+  }
+  for (const [index, photo] of photos.entries()) {
+    drawContained(
+      ctx,
+      photo,
+      margin + (index % columns) * (photoWidth + 12),
+      y - 10 + Math.floor(index / columns) * (photoHeight + 12),
+      photoWidth,
+      photoHeight,
+    );
+    photo.close();
   }
   ctx.direction = "ltr";
   ctx.font = "18px system-ui";

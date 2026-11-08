@@ -28,10 +28,36 @@ try {
     });
   });
   const url = `https://x.com/example/status/731?run=${crypto.randomUUID()}`;
+  const assetOrigin = "https://pbs.twimg.com";
+  const assets = {
+    "/profile_images/avatar.png": { rgb: [20, 90, 230], cors: true },
+    "/media/attached.png": { rgb: [15, 170, 90], cors: true },
+    "/media/no-cors.png": { rgb: [245, 25, 35], cors: false },
+  };
+  const mediaFetches = [];
+  await context.route(`${assetOrigin}/**`, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const asset = assets[path];
+    assert.ok(asset);
+    if (route.request().resourceType() === "fetch") mediaFetches.push(path);
+    const fixture = createCanvas(160, 90);
+    const pixels = fixture.getContext("2d");
+    pixels.fillStyle = `rgb(${asset.rgb.join(",")})`;
+    pixels.fillRect(0, 0, fixture.width, fixture.height);
+    return route.fulfill({
+      contentType: "image/png",
+      body: fixture.toBuffer("image/png"),
+      headers: {
+        "access-control-allow-origin": asset.cors
+          ? "*"
+          : "https://unrelated.test",
+      },
+    });
+  });
   await context.route(url, (route) =>
     route.fulfill({
       contentType: "text/html; charset=utf-8",
-      body: '<!doctype html><title>Post fixture</title><main><article><a href="/example/status/731" translate="no"><time>Monday</time></a><div data-testid="tweetText">The library opens every Monday.</div></article></main>',
+      body: `<!doctype html><title>Post fixture</title><main><article><img src="${assetOrigin}/profile_images/avatar.png"><a href="/example/status/731" translate="no"><time>Monday</time></a><div data-testid="tweetText">The library opens every Monday.</div><div data-testid="tweetPhoto"><img src="${assetOrigin}/media/attached.png"><img src="${assetOrigin}/media/no-cors.png"></div></article></main>`,
     }),
   );
   await context.setOffline(true);
@@ -93,6 +119,24 @@ try {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(image, 0, 0);
   const pixels = ctx.getImageData(0, 0, image.width, image.height);
+  const hasColor = ([red, green, blue]) => {
+    for (let offset = 0; offset < pixels.data.length; offset += 4)
+      if (
+        pixels.data[offset] === red &&
+        pixels.data[offset + 1] === green &&
+        pixels.data[offset + 2] === blue
+      )
+        return true;
+    return false;
+  };
+  assert.ok(hasColor(assets["/profile_images/avatar.png"].rgb));
+  assert.ok(hasColor(assets["/media/attached.png"].rgb));
+  assert.ok(!hasColor(assets["/media/no-cors.png"].rgb));
+  assert.deepEqual(
+    [...new Set(mediaFetches)].sort(),
+    Object.keys(assets).sort(),
+  );
+  result.mediaAndCorsFallback = true;
   const code = jsQR(pixels.data, image.width, image.height);
   assert.equal(code?.data, "https://x.com/example/status/731");
   result.qrDestination = code.data;
