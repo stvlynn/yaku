@@ -80,6 +80,23 @@ try {
   await expect(rendered).toHaveCount(3, { timeout: 90000 });
   result.contextual = await target.textContent();
   assert.doesNotMatch(result.contextual, /银行/u);
+  await target.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = document.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  panel = await popup();
+  await panel.getByRole("button", { name: /^More reading controls/ }).click();
+  await panel.getByRole("button", { name: "Compare page context" }).click();
+  await panel.close();
+  const comparison = page.getByRole("dialog", { name: "Compare page context" });
+  await expect(comparison).toContainText(result.baseline, { timeout: 90000 });
+  await expect(comparison).toContainText(result.contextual);
+  await expect(target).toHaveText(result.contextual);
+  await comparison.getByRole("button", { name: "Close" }).click();
+  result.pairedComparison = true;
   panel = await popup();
   await panel.getByRole("button", { name: "Show original" }).click();
   await expect(rendered).toHaveCount(0);

@@ -201,4 +201,21 @@ it("uses neighboring original passages on explicit contextual translation withou
     "After the meeting.",
   ]);
   expect(request?.context).toContain("yaku-link");
+  const block = document.querySelectorAll("main > p")[1]!;
+  const displayed = block.querySelector('[data-yaku-owned="translation"]')!;
+  displayed.append(" Manual edit");
+  run.mockClear();
+  const comparison = await controller.compareContext(
+    block,
+    new AbortController().signal,
+  );
+  expect(comparison?.source).toBe("Read the complete guide.");
+  expect(comparison?.withContext.status).toBe("fulfilled");
+  expect(comparison?.withoutContext.status).toBe("fulfilled");
+  const [baseline, contextual] = run.mock.calls.map(([input]) => input);
+  expect(contextual?.id).not.toBe(baseline?.id);
+  expect(baseline?.articleBackground).toBeUndefined();
+  expect(contextual?.articleBackground).toEqual(request?.articleBackground);
+  expect(baseline?.context).toBe(contextual?.context);
+  expect(displayed.textContent).toContain("Manual edit");
 });

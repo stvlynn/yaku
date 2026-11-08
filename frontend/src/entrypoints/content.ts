@@ -1,5 +1,6 @@
 import {
   createPageTranslator,
+  openContextDialog,
   reliableLanguageObservation,
 } from "../features/page-translation";
 import { installContextTranslation } from "../features/context-translation";
@@ -110,6 +111,7 @@ export default defineContentScript({
         }),
     });
     let manualRevision = 0;
+    let closeComparison: (() => void) | undefined;
     let editingRevision = 0;
     async function translateManually(
       wholePage = false,
@@ -128,6 +130,7 @@ export default defineContentScript({
         });
     }
     function restorePage() {
+      closeComparison?.();
       manualRevision++;
       page.restore();
     }
@@ -197,6 +200,19 @@ export default defineContentScript({
             case "translate-page-with-context":
               await translateManually(false, true);
               return page.isActive();
+            case "compare-page-context": {
+              closeComparison?.();
+              const block = page.comparisonBlock();
+              closeComparison = openContextDialog(
+                document,
+                getSettings().theme,
+                (signal) =>
+                  block
+                    ? page.compareContext(block, signal)
+                    : Promise.resolve(undefined),
+              );
+              return;
+            }
             case "translate-whole-page":
               await translateManually(true);
               return page.isActive();
@@ -292,6 +308,7 @@ export default defineContentScript({
       }
     })().catch(onError);
     ctx.onInvalidated(() => {
+      closeComparison?.();
       manualRevision++;
       editingRevision++;
       remove();

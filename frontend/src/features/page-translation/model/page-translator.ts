@@ -2,7 +2,11 @@ import {
   resolveSourceLanguagePolicy,
   type Settings,
 } from "../../../entities/settings";
-import type { Translate, TranslationMode } from "../../../entities/translation";
+import type {
+  Translate,
+  TranslationMode,
+  TranslationRequest,
+} from "../../../entities/translation";
 import { alreadyTargetLanguage, reliableLanguageObservation } from "./language";
 import { createInlineCodec } from "../../../shared/translation-markup";
 import { createRequestId } from "../../../shared/request-id";
@@ -68,6 +72,10 @@ const styles = {
 
 type RecordEntry = {
   articleBackground?: { title: string; nearby: readonly string[] };
+  comparison?: {
+    request: Omit<TranslationRequest, "id">;
+    decode: (text: string) => DocumentFragment;
+  };
   block: TranslationRoot;
   nodes: Text[];
   values: string[];
@@ -414,15 +422,19 @@ export function createPageTranslator({
       entry.originals = codec.originals;
       const id = createRequestId();
       requests.add(id);
-      const result = await translate({
-        id,
+      const request = {
         text: codec.text,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         glossary: settings.glossary,
         context: codec.instruction,
-        articleBackground: entry.articleBackground,
-      }).finally(() => requests.delete(id));
+        articleBackground: withArticleContext
+          ? entry.articleBackground
+          : undefined,
+      };
+      const result = await translate({ id, ...request }).finally(() =>
+        requests.delete(id),
+      );
       if (
         !active ||
         token !== generation ||
@@ -435,6 +447,12 @@ export function createPageTranslator({
       target.lang = settings.targetLanguage;
       target.dir = "auto";
       target.append(codec.decode(result.text));
+      entry.comparison = entry.articleBackground
+        ? {
+            request: { ...request, articleBackground: entry.articleBackground },
+            decode: codec.decode,
+          }
+        : undefined;
       target.addEventListener("click", (event) => {
         if (!editing) return;
         event.stopPropagation();
@@ -496,9 +514,7 @@ export function createPageTranslator({
       )
         .slice(0, 300)
         .join("");
-    const title = withArticleContext
-      ? Array.from(document.title.trim()).slice(0, 160).join("")
-      : "";
+    const title = Array.from(document.title.trim()).slice(0, 160).join("");
     for (const [index, [block, nodes]] of blocks.entries()) {
       const existing = entries.get(block);
       if (existing?.target || existing?.pending || existing?.skipped) continue;
@@ -516,7 +532,7 @@ export function createPageTranslator({
       };
       entry.nodes = nodes;
       entry.values = nodes.map((node) => node.data);
-      if (withArticleContext) {
+      {
         const nearby = [blocks[index - 1], blocks[index + 1]]
           .flatMap((neighbor) =>
             neighbor && neighbor[0].getRootNode() === block.getRootNode()
@@ -648,6 +664,66 @@ export function createPageTranslator({
 
   const controller = {
     isActive: () => active,
+    comparisonBlock() {
+      const candidates = [...entries.values()].filter(
+        (entry) => entry.target?.isConnected && entry.comparison,
+      );
+      const selection = document.getSelection()?.anchorNode;
+      return (
+        candidates.find(
+          (entry) => selection && entry.block.contains(selection),
+        ) ??
+        candidates.find((entry) => {
+          const rect = entry.target!.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < view.innerHeight;
+        }) ??
+        candidates[0]
+      )?.block;
+    },
+    async compareContext(block: TranslationRoot, signal: AbortSignal) {
+      const entry = entries.get(block);
+      if (!entry?.target || !entry.comparison || !sourceUnchanged(entry))
+        return;
+      const { request, decode } = entry.comparison;
+      const target = entry.target;
+      const token = generation;
+      const route = routeKey();
+      const settings = settingsKey();
+      signal.throwIfAborted();
+      const compare = async (
+        articleBackground?: TranslationRequest["articleBackground"],
+      ) => {
+        const id = createRequestId();
+        requests.add(id);
+        const abort = () => {
+          if (cancel) void cancel(id).catch(() => {});
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        try {
+          const result = await translate({ ...request, id, articleBackground });
+          return decode(result.text).textContent ?? "";
+        } finally {
+          signal.removeEventListener("abort", abort);
+          requests.delete(id);
+        }
+      };
+      const [withoutContext, withContext] = await Promise.allSettled([
+        compare(),
+        compare(request.articleBackground),
+      ]);
+      signal.throwIfAborted();
+      if (
+        token !== generation ||
+        route !== routeKey() ||
+        settings !== settingsKey() ||
+        entries.get(block) !== entry ||
+        entry.target !== target ||
+        !target.isConnected ||
+        !sourceUnchanged(entry)
+      )
+        return;
+      return { source: entry.values.join(""), withoutContext, withContext };
+    },
     isEditing: () => editing,
     setEditing(enabled: boolean) {
       if (disposed) return;
