@@ -57,6 +57,67 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it("translates only the native selection and restores its direction on undo", async () => {
+    document.body.innerHTML =
+      "<textarea>Keep /ja Good morning. And keep this.</textarea>";
+    const editor = document.querySelector("textarea")!;
+    editor.focus();
+    editor.setSelectionRange(9, 22, "backward");
+    const run = vi.fn<Translate>(async ({ id }) => ({
+      id,
+      text: "早上好。",
+      elapsedMs: 0,
+    }));
+    await install(run, undefined, {
+      ...defaultSettings,
+      inputTargetLanguage: "zh",
+    }).translateInput();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      text: "Good morning.",
+      targetLanguage: "zh",
+    });
+    expect(editor.value).toBe("Keep /ja 早上好。 And keep this.");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.value).toBe("Keep /ja Good morning. And keep this.");
+    expect([
+      editor.selectionStart,
+      editor.selectionEnd,
+      editor.selectionDirection,
+    ]).toEqual([9, 22, "backward"]);
+  });
+  it("joins partial rich paragraphs without changing the surrounding markup or undo selection", async () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><p class="first">Keep <b>Good morning</b>.</p><p class="second">Good night to you.</p></div>';
+    const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+    editor.focus();
+    const first = editor.querySelector("b")!.firstChild!;
+    const last = editor.lastChild!.firstChild!;
+    window.getSelection()!.setBaseAndExtent(last, 10, first, 0);
+    const run = vi.fn<Translate>(async ({ id, text }) => ({
+      id,
+      text: text
+        .replace("Good morning", "早上好")
+        .replace("Good night", "晚安"),
+      elapsedMs: 0,
+    }));
+    await install(run).translateInput();
+    expect(run.mock.calls[0]?.[0].text).not.toMatch(/Keep|to you/u);
+    expect(editor.innerHTML).toBe(
+      '<p class="first">Keep <b>早上好</b>.</p><p class="second">晚安 to you.</p>',
+    );
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    const selection = window.getSelection()!;
+    expect([
+      selection.anchorNode,
+      selection.anchorOffset,
+      selection.focusNode,
+      selection.focusOffset,
+    ]).toEqual([last, 10, first, 0]);
+  });
   it("retargets from the original suffix, remembers the choice, and undoes both translations", async () => {
     document.body.innerHTML = "<textarea>Keep // Good morning</textarea>";
     const editor = document.querySelector("textarea")!;

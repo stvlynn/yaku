@@ -18,11 +18,75 @@ type Snapshot = {
     end: number;
     direction: "forward" | "backward" | "none";
   };
-  range?: Range;
+  richSelection?: {
+    anchor: Node;
+    anchorOffset: number;
+    focus: Node;
+    focusOffset: number;
+  };
+  replaceSelection?: (translated: DocumentFragment) => DocumentFragment;
   codec?: ReturnType<typeof createInlineCodec>;
   prefix?: string | DocumentFragment;
+  suffix?: string;
   targetLanguage?: string;
 };
+
+function nodePath(root: Node, node: Node): number[] {
+  const path: number[] = [];
+  for (let current = node; current !== root; current = current.parentNode!)
+    path.unshift(
+      Array.from(current.parentNode!.childNodes).indexOf(current as ChildNode),
+    );
+  return path;
+}
+
+function richReplacement(root: HTMLElement, range: Range) {
+  const document = root.ownerDocument;
+  const start = nodePath(root, range.startContainer);
+  const end = nodePath(root, range.endContainer);
+  const startOffset = range.startOffset;
+  const endOffset = range.endOffset;
+  const originalRoot = root.cloneNode(true);
+  // Rebuild from the original on each retarget, leaving the undo nodes untouched.
+  return (translated: DocumentFragment) => {
+    const clone = originalRoot.cloneNode(true);
+    const at = (path: number[]) =>
+      path.reduce((node, index) => node.childNodes[index]!, clone);
+    const replacement = document.createRange();
+    replacement.setStart(at(start), startOffset);
+    replacement.setEnd(at(end), endOffset);
+    const ancestor = replacement.commonAncestorContainer;
+    const edge = (node: Node) => {
+      const path: Element[] = [];
+      for (let item = node; item !== ancestor; item = item.parentNode!)
+        if (item.nodeType === 1) path.unshift(item as Element);
+      return path;
+    };
+    const leading = edge(replacement.startContainer);
+    const trailing = edge(replacement.endContainer);
+    replacement.deleteContents();
+    function join(into: ParentNode, path: Element[], side: "start" | "end") {
+      const boundary = side === "start" ? into.firstChild : into.lastChild;
+      const [original, ...descendants] = path;
+      if (!original) return;
+      if (
+        boundary?.nodeType !== 1 ||
+        (boundary as Element).localName !== original.localName
+      )
+        throw new Error(contextErrors.protectedEditor);
+      join(boundary as Element, descendants, side);
+      if (side === "start") original.append(...boundary.childNodes);
+      else original.prepend(...boundary.childNodes);
+      into.removeChild(boundary);
+    }
+    join(translated, leading, "start");
+    join(translated, trailing, "end");
+    replacement.insertNode(translated);
+    const result = document.createDocumentFragment();
+    result.append(...clone.childNodes);
+    return result;
+  };
+}
 
 function inputDirective(text: string) {
   const matches = [
@@ -156,15 +220,26 @@ export function createEditorTracker(
       version: versions.get(element) ?? 0,
       originalNodes: native ? [] : [...element.childNodes],
     };
-    const directive = inputDirective(snapshot.text);
-    if (directive) snapshot.targetLanguage = directive.targetLanguage;
-    if (native)
+    if (native) {
       snapshot.selection = {
         start: element.selectionStart ?? 0,
         end: element.selectionEnd ?? 0,
         direction: element.selectionDirection ?? "none",
       };
-    else {
+      const { start, end } = snapshot.selection;
+      if (start !== end) {
+        snapshot.prefix = element.value.slice(0, start);
+        snapshot.suffix = element.value.slice(end);
+        snapshot.text = element.value.slice(start, end);
+      } else {
+        const directive = inputDirective(snapshot.text);
+        if (directive) {
+          snapshot.targetLanguage = directive.targetLanguage;
+          snapshot.prefix = snapshot.text.slice(0, directive.start);
+          snapshot.text = snapshot.text.slice(directive.end);
+        }
+      }
+    } else {
       if (
         element.querySelector(
           '[contenteditable="false"],script,style,iframe,input,textarea,select',
@@ -172,7 +247,31 @@ export function createEditorTracker(
       )
         throw new Error(contextErrors.protectedEditor);
       let translationRoot = element;
-      if (directive) {
+      const selection = view.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : undefined;
+      if (
+        range &&
+        selection?.anchorNode &&
+        selection.focusNode &&
+        element.contains(range.commonAncestorContainer)
+      )
+        snapshot.richSelection = {
+          anchor: selection.anchorNode,
+          anchorOffset: selection.anchorOffset,
+          focus: selection.focusNode,
+          focusOffset: selection.focusOffset,
+        };
+      const selectedRange =
+        snapshot.richSelection && range && !range.collapsed ? range : undefined;
+      const directive = selectedRange
+        ? undefined
+        : inputDirective(snapshot.text);
+      if (selectedRange) {
+        translationRoot = document.createElement("div");
+        translationRoot.append(selectedRange.cloneContents());
+        snapshot.replaceSelection = richReplacement(element, selectedRange);
+      } else if (directive) {
+        snapshot.targetLanguage = directive.targetLanguage;
         const range = document.createRange();
         range.selectNodeContents(element);
         const point = (offset: number): [Node, number] => {
@@ -198,18 +297,9 @@ export function createEditorTracker(
       snapshot.codec = createInlineCodec(document, translationRoot, nodes, {
         preserveBlocks: true,
         preserveProtected: true,
+        preserveEditorElements: !!selectedRange,
       });
       snapshot.text = snapshot.codec.text;
-      const selection = view.getSelection();
-      if (
-        selection?.rangeCount &&
-        element.contains(selection.getRangeAt(0).commonAncestorContainer)
-      )
-        snapshot.range = selection.getRangeAt(0).cloneRange();
-    }
-    if (native && directive) {
-      snapshot.prefix = snapshot.text.slice(0, directive.start);
-      snapshot.text = snapshot.text.slice(directive.end);
     }
     return snapshot;
   }
@@ -263,10 +353,13 @@ export function createEditorTracker(
       nativeValue(
         element,
         (typeof snapshot.prefix === "string" ? snapshot.prefix : "") +
-          translated,
+          translated +
+          (snapshot.suffix ?? ""),
       );
+    else if (snapshot.replaceSelection)
+      element.replaceChildren(snapshot.replaceSelection(fragment!));
     else if (snapshot.prefix && typeof snapshot.prefix !== "string")
-      element.replaceChildren(snapshot.prefix, fragment!);
+      element.replaceChildren(snapshot.prefix.cloneNode(true), fragment!);
     else element.replaceChildren(fragment!);
     const appliedSignature = signature(element);
     emit(element, "input", "insertReplacementText", plain);
@@ -293,10 +386,12 @@ export function createEditorTracker(
           snapshot.selection.end,
           snapshot.selection.direction,
         );
-      else if (snapshot.range) {
-        const selection = view.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(snapshot.range);
+      else if (snapshot.richSelection) {
+        const { anchor, anchorOffset, focus, focusOffset } =
+          snapshot.richSelection;
+        view
+          .getSelection()
+          ?.setBaseAndExtent(anchor, anchorOffset, focus, focusOffset);
       }
       return true;
     }

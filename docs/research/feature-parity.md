@@ -78,7 +78,9 @@ The Space gesture counts browser-confirmed edits at the end of the same focused 
 
 The supplied artifact sets the independent input target to English. Its desktop result bar retranslates the original input when the user changes the target, then persists the successful manual choice. Yaku uses the same source snapshot for each target, resolves terminology for the selected target, and restores the original editor with one undo. Inline language directives take precedence over the saved default for the initial request.
 
-The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Its page-language fallback is separately configurable and disabled by default. That automatic choice, selected-only input translation, the bar's editor-relative placement, configurable delimiters and mobile timing remain open.
+The reference's input demo advertises translating the selected part with the shortcut. Yaku gives an active editor selection priority over full-field directives. The native transaction keeps the prefix and suffix out of the model request. Rich text uses a cloned DOM Range and reattaches partial boundary wrappers, preserving their formatting and surrounding content across paragraph boundaries. Undo restores the original selection direction and original rich nodes. [Reference input demo](https://immersivetranslate.com/en/input/) · [DOM Range algorithms](https://dom.spec.whatwg.org/#ranges)
+
+The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Its page-language fallback is separately configurable and disabled by default. That automatic choice, the bar's editor-relative placement, configurable delimiters and mobile timing remain open.
 
 ## Document and file matrix
 

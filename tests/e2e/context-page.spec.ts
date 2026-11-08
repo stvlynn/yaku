@@ -366,6 +366,25 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
           },
         });
       });
+      const selectedInput = "Keep Good morning. Keep this too.";
+      await input.fill(selectedInput);
+      await input.evaluate((element: HTMLInputElement) =>
+        element.setSelectionRange(5, 18, "backward"),
+      );
+      await send("translate-input");
+      await expect(input).toHaveValue(/^Keep .*早.* Keep this too\.$/u, {
+        timeout: 180000,
+      });
+      evidence.selectedInput = await input.inputValue();
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue(selectedInput);
+      expect(
+        await input.evaluate((element: HTMLInputElement) => [
+          element.selectionStart,
+          element.selectionEnd,
+          element.selectionDirection,
+        ]),
+      ).toEqual([5, 18, "backward"]);
       await inputCdp.detach();
       const rich = page.locator("#rich");
       const originalRich = await rich.innerHTML();
@@ -378,6 +397,25 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       evidence.richTranslation = await rich.innerHTML();
       await clickContextButton(page, "Undo translation");
       expect(await rich.innerHTML()).toBe(originalRich);
+      await rich.locator("strong").evaluate((element) => {
+        const text = element.firstChild!;
+        getSelection()!.setBaseAndExtent(
+          text,
+          text.textContent!.length,
+          text,
+          0,
+        );
+      });
+      await send("translate-input");
+      await expect(rich.locator("strong")).toContainText(/[\u3400-\u9fff]/u, {
+        timeout: 180000,
+      });
+      await expect(rich.locator("p").last()).toHaveText("Good morning.");
+      await clickContextButton(page, "Undo translation");
+      expect(await rich.innerHTML()).toBe(originalRich);
+      expect(await page.evaluate(() => getSelection()?.toString())).toBe(
+        "friend",
+      );
       await page.locator("#pick").evaluate((element) => {
         const range = document.createRange();
         range.selectNodeContents(element);
