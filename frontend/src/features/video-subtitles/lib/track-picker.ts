@@ -22,7 +22,11 @@ export function chooseSubtitleTrack(
   const style = document.createElement("style");
   style.textContent = `${contentThemeCss}
     dialog{font:inherit;color:var(--foreground);background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-2);padding:20px;width:min(380px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto}
+    dialog[open]{animation:dialog-in 200ms var(--ease-out)}
     dialog::backdrop{background:rgb(0 0 0 / .3)}
+    dialog[open]::backdrop{animation:backdrop-in 200ms ease}
+    @keyframes dialog-in{from{opacity:0;transform:scale(.97)}}
+    @keyframes backdrop-in{from{opacity:0}}
     h2{font-size:17px;line-height:1.4;margin:0 0 16px;font-weight:600}
     .tracks{display:grid;gap:6px}
     .track{width:100%;text-align:start;overflow-wrap:anywhere;min-height:44px;box-shadow:none}

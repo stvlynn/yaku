@@ -165,7 +165,6 @@ export const copy = {
     "The translation is too long to fit this image region legibly. Export the bilingual view instead.",
   downloadTranslatedImage: "Download translated image",
   moveControl: "Move control",
-  move: "Move",
   textWorkspace: "Text & files",
   controlPositionError: "The control position could not be saved.",
   imageInvalidFormat: "Unsupported image format.",

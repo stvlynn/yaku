@@ -24,7 +24,7 @@ export function installFloatingControl(options: FloatingControlOptions) {
   sheet.textContent = `${contentThemeCss}
   :host{position:fixed;z-index:2147483646;right:20px;bottom:24px;max-width:calc(100vw - 16px)}
   :host([hidden]){display:none!important}.control{display:flex;gap:4px;padding:4px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-2);align-items:center}
-  .handle{font-size:11px;cursor:grab;touch-action:none;padding-inline:8px}.handle:active{cursor:grabbing}.workspace{font-size:12px}.error{margin-bottom:8px;padding:10px 12px;max-width:300px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--danger);font-size:12px;box-shadow:var(--shadow-2)}[hidden]{display:none!important}`;
+  .handle{display:grid;place-items:center;width:28px;padding:0;color:var(--muted-foreground);cursor:grab;touch-action:none}.handle:active{cursor:grabbing;transform:none}.workspace{font-size:12px}.error{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;padding:10px 4px 4px 12px;max-width:300px;background:var(--card);border:1px solid color-mix(in oklab,var(--danger) 28%,var(--border));border-radius:var(--radius-card);color:var(--danger);font-size:12px;box-shadow:var(--shadow-2)}.error p{padding-right:8px}.error button{align-self:flex-end;min-height:32px;padding:4px 10px;font-size:12px}[hidden]{display:none!important}`;
   const error = document.createElement("div");
   error.className = "error";
   error.role = "alert";
@@ -46,7 +46,7 @@ export function installFloatingControl(options: FloatingControlOptions) {
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "handle ghost";
-  handle.textContent = copy.move;
+  handle.append(gripIcon(document));
   handle.setAttribute("aria-label", copy.moveControl);
   handle.title = copy.moveControl;
   const toggle = document.createElement("button");
@@ -227,4 +227,23 @@ export function installFloatingControl(options: FloatingControlOptions) {
       host.remove();
     },
   };
+}
+
+function gripIcon(document: Document) {
+  const namespace = "http://www.w3.org/2000/svg";
+  const icon = document.createElementNS(namespace, "svg");
+  icon.setAttribute("viewBox", "0 0 16 16");
+  icon.setAttribute("width", "16");
+  icon.setAttribute("height", "16");
+  icon.setAttribute("fill", "currentColor");
+  icon.setAttribute("aria-hidden", "true");
+  for (const x of [6, 10])
+    for (const y of [4, 8, 12]) {
+      const dot = document.createElementNS(namespace, "circle");
+      dot.setAttribute("cx", String(x));
+      dot.setAttribute("cy", String(y));
+      dot.setAttribute("r", "1.1");
+      icon.append(dot);
+    }
+  return icon;
 }

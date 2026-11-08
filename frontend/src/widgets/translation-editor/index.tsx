@@ -115,7 +115,9 @@ export function TranslationEditor({
           <h2>{resultLabel}</h2>
           {result && (
             <Button variant="ghost" onClick={onCopy}>
-              {copied ? <Check size={15} /> : <Copy size={15} />}
+              <span className="icon-swap" key={copied ? "copied" : "copy"}>
+                {copied ? <Check size={15} /> : <Copy size={15} />}
+              </span>
               {copied ? copy.copied : copyLabel}
             </Button>
           )}

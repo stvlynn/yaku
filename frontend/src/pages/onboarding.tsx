@@ -106,72 +106,74 @@ export function OnboardingPage(props: OnboardingPageProps) {
               ))}
             </div>
           </div>
-          <header className="onboarding-heading">
-            <h1>{titles[props.step]}</h1>
-            <p>{descriptions[props.step]}</p>
-          </header>
-          {props.step === "model" && (
-            <div className="onboarding-setup">
-              <LanguagePreferences
-                preferences={props.preferences}
-                onPreferencesChange={props.onPreferencesChange}
-                compact
-              />
-              <div className="onboarding-model">
-                <ModelStatusView status={props.status} detail />
-                {props.status.phase !== "ready" && (
-                  <p>{copy.modelDownloadDetail}</p>
-                )}
-                {["idle", "error"].includes(props.status.phase) && (
-                  <Button variant="primary" onClick={props.onPrepareModel}>
-                    <Download size={16} />
-                    {props.status.phase === "error"
-                      ? copy.retry
-                      : copy.downloadModel}
-                  </Button>
-                )}
-                {["downloading", "loading"].includes(props.status.phase) && (
-                  <Button onClick={props.onCancelDownload}>
-                    {copy.cancelDownload}
-                  </Button>
-                )}
-                {props.status.phase === "ready" && (
-                  <p className="onboarding-ready">
-                    <Check size={15} />
-                    {copy.modelReadyContinue}
-                  </p>
+          <div className="onboarding-step" key={props.step}>
+            <header className="onboarding-heading">
+              <h1>{titles[props.step]}</h1>
+              <p>{descriptions[props.step]}</p>
+            </header>
+            {props.step === "model" && (
+              <div className="onboarding-setup">
+                <LanguagePreferences
+                  preferences={props.preferences}
+                  onPreferencesChange={props.onPreferencesChange}
+                  compact
+                />
+                <div className="onboarding-model">
+                  <ModelStatusView status={props.status} detail />
+                  {props.status.phase !== "ready" && (
+                    <p>{copy.modelDownloadDetail}</p>
+                  )}
+                  {["idle", "error"].includes(props.status.phase) && (
+                    <Button variant="primary" onClick={props.onPrepareModel}>
+                      <Download size={16} />
+                      {props.status.phase === "error"
+                        ? copy.retry
+                        : copy.downloadModel}
+                    </Button>
+                  )}
+                  {["downloading", "loading"].includes(props.status.phase) && (
+                    <Button onClick={props.onCancelDownload}>
+                      {copy.cancelDownload}
+                    </Button>
+                  )}
+                  {props.status.phase === "ready" && (
+                    <p className="onboarding-ready">
+                      <Check size={15} />
+                      {copy.modelReadyContinue}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            {props.step === "try" && (
+              <div className="onboarding-practice">
+                <label htmlFor="practice-input" className="field-label">
+                  {copy.sourceText}
+                </label>
+                <textarea
+                  id="practice-input"
+                  className="input"
+                  value={props.source}
+                  readOnly={busy}
+                  onChange={(event) => props.onSourceChange(event.target.value)}
+                  placeholder={copy.sourcePlaceholder}
+                />
+                <Button
+                  onClick={props.onTranslate}
+                  disabled={busy || !props.source.trim()}
+                >
+                  <Languages size={16} />
+                  {busy ? copy.translating : copy.translate}
+                </Button>
+                {props.result && (
+                  <div className="practice-result" role="status">
+                    <span className="field-label">{copy.resultText}</span>
+                    <p>{props.result}</p>
+                  </div>
                 )}
               </div>
-            </div>
-          )}
-          {props.step === "try" && (
-            <div className="onboarding-practice">
-              <label htmlFor="practice-input" className="field-label">
-                {copy.sourceText}
-              </label>
-              <textarea
-                id="practice-input"
-                className="input"
-                value={props.source}
-                readOnly={busy}
-                onChange={(event) => props.onSourceChange(event.target.value)}
-                placeholder={copy.sourcePlaceholder}
-              />
-              <Button
-                onClick={props.onTranslate}
-                disabled={busy || !props.source.trim()}
-              >
-                <Languages size={16} />
-                {busy ? copy.translating : copy.translate}
-              </Button>
-              {props.result && (
-                <div className="practice-result" role="status">
-                  <span className="field-label">{copy.resultText}</span>
-                  <p>{props.result}</p>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
           {(props.error || props.status.error) && (
             <Notice>{props.error || props.status.error}</Notice>
           )}

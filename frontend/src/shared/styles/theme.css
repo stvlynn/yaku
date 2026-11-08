@@ -83,9 +83,9 @@ svg {
   font-weight: 550;
   line-height: 1.3;
   transition:
-    background-color 120ms,
-    transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 120ms;
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   white-space: nowrap;
 }
 .button--primary {
@@ -99,7 +99,7 @@ svg {
   border-color: transparent;
 }
 .button:not(:disabled):active {
-  transform: scale(0.96);
+  transform: scale(0.97);
   box-shadow: none;
 }
 .button:focus-visible {
@@ -121,6 +121,17 @@ svg {
   }
   .button--primary:hover:not(:disabled) {
     box-shadow: var(--shadow-2);
+  }
+  .select-trigger:hover:not(:disabled):not([data-popup-open]) {
+    background: var(--muted);
+  }
+  .settings-nav button:hover:not([aria-current="page"]),
+  .workspace-tabs button:hover:not(:disabled):not([aria-pressed="true"]),
+  .popup-mode button:hover:not([aria-pressed="true"]) {
+    color: var(--foreground);
+  }
+  .settings-nav button:hover:not([aria-current="page"]) {
+    background: color-mix(in oklab, var(--muted) 60%, transparent);
   }
 }
 .brand {
@@ -159,6 +170,10 @@ svg {
   padding: 8px 11px;
   box-shadow: var(--shadow-1);
   font-size: 13px;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .select-trigger > span:first-child {
   overflow: hidden;
@@ -166,8 +181,11 @@ svg {
   white-space: nowrap;
 }
 .select-trigger[data-popup-open] {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.select-trigger svg {
+  color: var(--muted-foreground);
 }
 .select-trigger:disabled {
   opacity: 0.6;
@@ -186,6 +204,18 @@ svg {
   background: var(--card);
   color: var(--foreground);
   box-shadow: var(--shadow-2);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--duration-popover) var(--ease-out),
+    transform var(--duration-popover) var(--ease-out);
+}
+.select-popup[data-starting-style],
+.select-popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.select-popup[data-ending-style] {
+  transition-duration: 100ms;
 }
 .select-item {
   position: relative;
@@ -201,7 +231,10 @@ svg {
 .select-check {
   position: absolute;
   left: 7px;
-  top: 11px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
 }
 .switch {
   width: 36px;
@@ -214,7 +247,9 @@ svg {
   background: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 120ms;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 .switch[data-checked] {
   background: var(--primary);
@@ -227,10 +262,12 @@ svg {
   border-radius: 50%;
   background: var(--card);
   box-shadow: var(--shadow-1);
-  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition:
+    transform 180ms var(--ease-out),
+    background-color 150ms ease;
 }
 .switch[data-checked] .switch-thumb {
-  transform: translateX(12px);
+  transform: translateX(14px);
   background: var(--primary-foreground);
 }
 .card {
@@ -287,8 +324,8 @@ svg {
   display: flex;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--danger) 28%, var(--border));
+  border-radius: var(--radius-control);
   color: var(--danger);
   background: var(--card);
   font-size: 13px;
@@ -322,7 +359,22 @@ svg {
   width: 100%;
   display: block;
   margin-top: 10px;
-  accent-color: var(--primary);
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--muted);
+}
+.model-status progress::-webkit-progress-bar {
+  background: var(--muted);
+}
+.model-status progress::-webkit-progress-value {
+  background: var(--accent-foreground);
+  border-radius: 999px;
+}
+.model-status progress::-moz-progress-bar {
+  background: var(--accent-foreground);
+  border-radius: 999px;
 }
 .model-file {
   display: block;
@@ -334,7 +386,7 @@ svg {
   white-space: nowrap;
 }
 .spinner {
-  animation: spin 1s linear infinite;
+  animation: spin 750ms linear infinite;
 }
 @keyframes spin {
   to {
@@ -379,6 +431,7 @@ svg {
   width: 100%;
 }
 .popup-mode {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
@@ -387,7 +440,21 @@ svg {
   border-radius: 12px;
   background: var(--muted);
 }
+.popup-mode::before {
+  content: "";
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: calc(50% - 6px);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow-1);
+  transition: transform 200ms var(--ease-out);
+}
+.popup-mode:has(> button:nth-child(2)[aria-pressed="true"])::before {
+  transform: translateX(calc(100% + 4px));
+}
 .popup-mode button {
+  position: relative;
   border: 0;
   border-radius: 8px;
   padding: 8px 6px;
@@ -395,11 +462,10 @@ svg {
   color: var(--muted-foreground);
   background: transparent;
   min-height: 36px;
+  transition: color 150ms ease;
 }
 .popup-mode button[aria-pressed="true"] {
   color: var(--foreground);
-  background: var(--card);
-  box-shadow: var(--shadow-1);
 }
 .popup-actions {
   display: flex;
@@ -457,6 +523,13 @@ svg {
   border-radius: 8px;
   text-align: left;
   font-size: 13px;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
+}
+.settings-nav button:active {
+  transform: scale(0.98);
 }
 .settings-nav button[aria-current="page"] {
   background: var(--muted);
@@ -641,6 +714,9 @@ svg {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   flex-shrink: 0;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
 }
 .workspace-tabs button[aria-pressed="true"] {
   color: var(--foreground);
@@ -660,7 +736,7 @@ svg {
   flex: 1;
   min-height: 180px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--card);
   box-shadow: var(--shadow-1);
   overflow: hidden;
@@ -729,6 +805,18 @@ svg {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.icon-swap {
+  display: inline-flex;
+  animation: icon-swap 200ms var(--ease-out);
+}
+@keyframes icon-swap {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+    filter: blur(2px);
+  }
 }
 .workspace-bottom {
   display: flex;
@@ -1106,9 +1194,28 @@ svg {
   width: 22px;
   border-radius: 2px;
   background: var(--border);
+  transition: background-color 300ms ease;
 }
 .setup-progress .complete {
   background: var(--accent-foreground);
+}
+.onboarding-step {
+  animation: settle-in 280ms var(--ease-out) both;
+}
+.onboarding-art > * {
+  animation: settle-in 400ms var(--ease-out) both;
+}
+.onboarding-art > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.onboarding-art > :nth-child(3) {
+  animation-delay: 180ms;
+}
+@keyframes settle-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 .onboarding-heading h1 {
   font-size: 36px;

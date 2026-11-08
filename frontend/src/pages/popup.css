@@ -32,6 +32,18 @@
   border-radius: 12px;
   box-shadow: var(--shadow-2);
   outline: none;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--duration-popover) var(--ease-out),
+    transform var(--duration-popover) var(--ease-out);
+}
+.popup-reading-content[data-starting-style],
+.popup-reading-content[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.popup-reading-content[data-ending-style] {
+  transition-duration: 100ms;
 }
 .popup-reading-heading {
   display: flex;
