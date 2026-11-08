@@ -20,6 +20,7 @@ export default defineBackground(() => {
     }
   >();
   const imageBatchKey = (id: string) => `imageBatch:${id}`;
+  const screenshotKey = (id: string) => `screenshot:${id}`;
   const getImageBatch = async (id: string) => {
     const key = imageBatchKey(id);
     return (await chrome.storage.session.get(key))[key] as
@@ -177,7 +178,27 @@ export default defineBackground(() => {
       ) {
         const payload = message.payload as
           { id?: string; data?: string } | undefined;
-        const grant = payload?.id ? imageRequests.get(payload.id) : undefined;
+        let grant = payload?.id ? imageRequests.get(payload.id) : undefined;
+        if (
+          !grant &&
+          payload?.id &&
+          message.action !== "translate-batch-image"
+        ) {
+          const key = screenshotKey(payload.id);
+          const saved = (await chrome.storage.session.get(key))[key] as
+            { tab: number; url: string } | undefined;
+          if (
+            saved &&
+            saved.tab === sender.tab?.id &&
+            saved.url === sender.url &&
+            sender.frameId === 0
+          ) {
+            await chrome.storage.session.remove(key);
+            if (message.action === "cancel-page-image") return null;
+            grant = { url: saved.url, tab: saved.tab, frame: 0, inline: true };
+            imageRequests.set(payload.id, grant);
+          }
+        }
         if (!grant && message.action === "cancel-page-image") return null;
         if (
           !grant ||
@@ -401,7 +422,11 @@ export default defineBackground(() => {
           active: true,
         });
         if (after?.id !== tabId || after.url !== before.url) return;
-        imageRequests.set(id, { url: "", inline: true, tab: tabId, frame: 0 });
+        if (!after.url) return;
+        const key = screenshotKey(id);
+        await chrome.storage.session.set({
+          [key]: { tab: tabId, url: after.url },
+        });
         try {
           await chrome.tabs.sendMessage(
             tabId,
@@ -413,7 +438,7 @@ export default defineBackground(() => {
             { frameId: 0 },
           );
         } finally {
-          imageRequests.delete(id);
+          await chrome.storage.session.remove(key);
         }
       })().catch(() => {
         void sendToTab("screenshot-unavailable", tab, 0).catch(() => {});
@@ -473,7 +498,7 @@ export default defineBackground(() => {
       const keys = Object.entries(values)
         .filter(
           ([key, value]) =>
-            key.startsWith("imageBatch:") &&
+            (key.startsWith("imageBatch:") || key.startsWith("screenshot:")) &&
             value &&
             typeof value === "object" &&
             "tab" in value &&

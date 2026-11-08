@@ -5,9 +5,11 @@ import { expect } from "@playwright/test";
 import { launchExtension, requireCachedModel, saveResult } from "./harness.mjs";
 
 const result = { completed: false };
+const highDpi = process.argv.includes("--high-dpi");
+const restart = process.argv.includes("--restart-worker");
 let session;
 try {
-  session = await launchExtension();
+  session = await launchExtension("options", highDpi ? 2 : 1);
   const { context, page: bridge } = session;
   result.identity = session.backgroundIdentity;
   result.cache = await requireCachedModel(session.send);
@@ -45,16 +47,18 @@ try {
       (worker) => worker.url() === new URL("background.js", bridge.url()).href,
     );
   assert.ok(worker);
-  await worker.evaluate(() => {
-    globalThis.screenshotRequests = [];
-    chrome.runtime.onMessage.addListener((message) => {
-      if (
-        message?.destination === "background" &&
-        message.action === "translate"
-      )
-        globalThis.screenshotRequests.push(message.payload.text);
+  const observeRequests = (worker) =>
+    worker.evaluate(() => {
+      globalThis.screenshotRequests = [];
+      chrome.runtime.onMessage.addListener((message) => {
+        if (
+          message?.destination === "background" &&
+          message.action === "translate"
+        )
+          globalThis.screenshotRequests.push(message.payload.text);
+      });
     });
-  });
+  await observeRequests(worker);
   const page = await context.newPage();
   await page.goto(url);
   await page.bringToFront();
@@ -85,6 +89,46 @@ try {
   );
   await open();
   await expect(dialog).toBeVisible();
+  const capture = await dialog.locator("canvas").evaluate((canvas) => ({
+    pixelWidth: canvas.width,
+    pixelHeight: canvas.height,
+    cssWidth: canvas.getBoundingClientRect().width,
+    cssHeight: canvas.getBoundingClientRect().height,
+    devicePixelRatio: window.devicePixelRatio,
+  }));
+  result.capture = capture;
+  if (highDpi) {
+    assert.equal(capture.devicePixelRatio, 2);
+    assert.equal(capture.pixelWidth, capture.cssWidth * 2);
+  }
+  if (restart) {
+    const cdp = await context.newCDPSession(bridge);
+    const versions = new Map();
+    cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: items }) => {
+      for (const item of items) versions.set(item.versionId, item);
+    });
+    await cdp.send("ServiceWorker.enable");
+    const running = () =>
+      [...versions.values()].find(
+        (item) =>
+          item.scriptURL === worker.url() && item.runningStatus === "running",
+      );
+    await expect.poll(running).toBeTruthy();
+    const id = running().versionId;
+    await cdp.send("ServiceWorker.stopWorker", { versionId: id });
+    await expect.poll(() => versions.get(id)?.runningStatus).toBe("stopped");
+    const grants = await bridge.evaluate(async () =>
+      Object.entries(await chrome.storage.session.get(null)).filter(([key]) =>
+        key.startsWith("screenshot:"),
+      ),
+    );
+    assert.equal(grants.length, 1);
+    assert.deepEqual(grants[0][1], { tab: tab.id, url });
+    await session.send("cache-info");
+    await expect.poll(() => versions.get(id)?.runningStatus).toBe("running");
+    await observeRequests(worker);
+    result.workerRestarted = true;
+  }
   await page.mouse.move(42, 58);
   await page.mouse.down();
   await page.mouse.move(600, 170, { steps: 8 });
@@ -105,13 +149,19 @@ try {
   await file.saveAs(".workspace/qa/translated-screenshot.png");
   const png = await readFile(".workspace/qa/translated-screenshot.png");
   result.dimensions = [png.readUInt32BE(16), png.readUInt32BE(20)];
-  assert.deepEqual(result.dimensions, [558, 112]);
+  assert.deepEqual(
+    result.dimensions,
+    [558, 112].map((size) => size * (highDpi ? 2 : 1)),
+  );
   result.completed = true;
 } catch (error) {
   result.error = String(error);
   process.exitCode = 1;
 } finally {
-  saveResult("screenshot-product", result);
+  saveResult(
+    highDpi || restart ? "screenshot-lifecycle-product" : "screenshot-product",
+    result,
+  );
   console.log(JSON.stringify(result));
   await session?.context.close();
 }
