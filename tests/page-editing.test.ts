@@ -36,6 +36,42 @@ const setup = (
 };
 const target = () =>
   document.querySelector<HTMLElement>('[data-yaku-owned="translation"]')!;
+
+it("carries contextual terms to subsequent sibling passages and clears them on restore", async () => {
+  const { controller, settings, run } = setup(
+    "<main><p>A dental crown protects the tooth.</p><p>The crown arrived.</p><section><p>The crown was displayed at the palace.</p></section></main>",
+  );
+  settings.glossary = { tooth: "牙齿" };
+  run.mockImplementation(async (request) => ({
+    id: request.id,
+    elapsedMs: 0,
+    text: request.text,
+    terms:
+      request.task === "extract-terminology" ? { crown: "牙冠" } : undefined,
+  }));
+  await controller.translatePage({ articleContext: true });
+  const [first, extract, second, palace] = run.mock.calls.map(
+    ([request]) => request,
+  );
+  expect(first?.task).toBeUndefined();
+  expect(extract?.terminologyEvidence?.later).toEqual(["The crown arrived."]);
+  expect(second?.glossary).toEqual({ tooth: "牙齿" });
+  expect(second?.articleTerminology).toEqual({
+    crown: {
+      target: "牙冠",
+      sourcePassage: "A dental crown protects the tooth.",
+    },
+  });
+  expect(palace?.glossary).toEqual({ tooth: "牙齿" });
+  controller.restore();
+  run.mockClear();
+  await controller.translatePage();
+  expect(
+    run.mock.calls.every(
+      ([request]) => !request.task && !request.articleTerminology,
+    ),
+  ).toBe(true);
+});
 afterEach(() => {
   controllers.splice(0).forEach((controller) => controller.dispose());
   history.replaceState(null, "", initialUrl);
@@ -181,4 +217,41 @@ describe("temporary page translation editing", () => {
     link.dispatchEvent(click);
     expect(preventedByEditor).toBe(false);
   });
+});
+
+it("uses neighboring original passages on explicit contextual translation without replacing format instructions", async () => {
+  const { controller, run } = setup(
+    '<main><p>Before the meeting.</p><p>Read the <a href="/guide">complete guide</a>.</p><p hidden>Hidden note.</p><p translate="no">Excluded note.</p><p>After the meeting.</p></main>',
+  );
+  await controller.translatePage();
+  expect(run.mock.calls.every(([request]) => !request.articleBackground)).toBe(
+    true,
+  );
+  run.mockClear();
+  await controller.translatePage({ articleContext: true });
+  const request = run.mock.calls.find(([input]) =>
+    input.text.includes("complete guide"),
+  )?.[0];
+  expect(request?.articleBackground?.nearby).toEqual([
+    "Before the meeting.",
+    "After the meeting.",
+  ]);
+  expect(request?.context).toContain("yaku-link");
+  const block = document.querySelectorAll("main > p")[1]!;
+  const displayed = block.querySelector('[data-yaku-owned="translation"]')!;
+  displayed.append(" Manual edit");
+  run.mockClear();
+  const comparison = await controller.compareContext(
+    block,
+    new AbortController().signal,
+  );
+  expect(comparison?.source).toBe("Read the complete guide.");
+  expect(comparison?.withContext.status).toBe("fulfilled");
+  expect(comparison?.withoutContext.status).toBe("fulfilled");
+  const [baseline, contextual] = run.mock.calls.map(([input]) => input);
+  expect(contextual?.id).not.toBe(baseline?.id);
+  expect(baseline?.articleBackground).toBeUndefined();
+  expect(contextual?.articleBackground).toEqual(request?.articleBackground);
+  expect(baseline?.context).toBe(contextual?.context);
+  expect(displayed.textContent).toContain("Manual edit");
 });

@@ -25,17 +25,27 @@ export function saveResult(name, value) {
   );
 }
 
-export async function launchExtension(surface = "options") {
+export async function launchExtension(
+  surface = "options",
+  deviceScaleFactor = 1,
+) {
   const extensionDirectory = resolve(repositoryRoot, ".output/chrome-mv3");
   if (!existsSync(resolve(extensionDirectory, "manifest.json")))
     throw new Error(
       "Build the extension with pnpm build before running experiments.",
     );
   const context = await chromium.launchPersistentContext(profileDirectory, {
+    deviceScaleFactor,
     channel: process.env.YAKU_BROWSER_CHANNEL ?? "chrome",
     headless: process.env.YAKU_HEADLESS !== "false",
     ignoreDefaultArgs: ["--disable-extensions"],
-    args: ["--enable-unsafe-extension-debugging", "--remote-debugging-port=0"],
+    args: [
+      "--enable-unsafe-extension-debugging",
+      "--remote-debugging-port=0",
+      ...(deviceScaleFactor === 1
+        ? []
+        : [`--force-device-scale-factor=${deviceScaleFactor}`]),
+    ],
   });
   try {
     const cdp = await context.browser().newBrowserCDPSession();

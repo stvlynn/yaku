@@ -1,7 +1,9 @@
 import {
   createPageTranslator,
+  openContextDialog,
   reliableLanguageObservation,
 } from "../features/page-translation";
+import { previewPostCard, trackPostCardTarget } from "../features/post-card";
 import { installContextTranslation } from "../features/context-translation";
 import {
   installVideoSubtitles,
@@ -9,7 +11,11 @@ import {
 } from "../features/video-subtitles";
 import { installFloatingControl } from "../features/floating-control";
 import { installPageImages } from "../features/page-images";
-import { readSettings, onSettingsChanged } from "../features/preferences";
+import {
+  readSettings,
+  saveSettings,
+  onSettingsChanged,
+} from "../features/preferences";
 import { request, isEnvelope, errorReply } from "../shared/messaging";
 import type { Translate } from "../entities/translation";
 import {
@@ -18,6 +24,7 @@ import {
   type Settings,
 } from "../entities/settings";
 import type { TemporaryTranslation } from "../features/temporary-translation";
+import { copy } from "../shared/i18n";
 
 export default defineContentScript({
   matches: ["<all_urls>"],
@@ -70,6 +77,16 @@ export default defineContentScript({
       translate,
       getSettings,
       onError,
+      detectLanguage: async (text) =>
+        reliableLanguageObservation(await chrome.i18n.detectLanguage(text))
+          ?.language,
+      inputGlossary: (targetLanguage) =>
+        resolveGlossary(settings, { targetLanguage, url: location.href }),
+      saveInputTargetLanguage: async (inputTargetLanguage) => {
+        const latest = await readSettings();
+        if (latest.inputTargetLanguage !== inputTargetLanguage)
+          await saveSettings({ ...latest, inputTargetLanguage });
+      },
       cancel: (payload) =>
         request<void>({ destination: "background", action: "cancel", payload }),
     });
@@ -110,10 +127,15 @@ export default defineContentScript({
         }),
     });
     let manualRevision = 0;
+    const postCardTarget = trackPostCardTarget(document);
+    let closeComparison: (() => void) | undefined;
     let editingRevision = 0;
-    async function translateManually(wholePage = false) {
+    async function translateManually(
+      wholePage = false,
+      articleContext = false,
+    ) {
       manualRevision++;
-      void page.translatePage({ wholePage }).catch(onError);
+      void page.translatePage({ wholePage, articleContext }).catch(onError);
       if (
         window.top === window &&
         page.isActive() &&
@@ -125,6 +147,7 @@ export default defineContentScript({
         });
     }
     function restorePage() {
+      closeComparison?.();
       manualRevision++;
       page.restore();
     }
@@ -191,6 +214,61 @@ export default defineContentScript({
             case "translate-page":
               await translateManually();
               return page.isActive();
+            case "translate-page-with-context":
+              await translateManually(false, true);
+              return page.isActive();
+            case "compare-page-context": {
+              closeComparison?.();
+              const block = page.comparisonBlock();
+              closeComparison = openContextDialog(
+                document,
+                getSettings().theme,
+                (signal) =>
+                  block
+                    ? page.compareContext(block, signal)
+                    : Promise.resolve(undefined),
+              );
+              return;
+            }
+            case "post-card": {
+              await previewPostCard(
+                document,
+                getSettings().theme,
+                page.translatedPassages,
+                postCardTarget.take(),
+              );
+              return;
+            }
+            case "select-screenshot-area": {
+              const { id, screenshot } = message.payload as {
+                id: string;
+                screenshot: string;
+              };
+              const { translateScreenshot } =
+                await import("../features/screenshot-translation");
+              await translateScreenshot({
+                document,
+                screenshot,
+                theme: getSettings().theme,
+                translate: (data) =>
+                  request({
+                    destination: "background",
+                    action: "translate-page-image",
+                    payload: { id, data },
+                  }),
+                cancel: () => {
+                  void request({
+                    destination: "background",
+                    action: "cancel-page-image",
+                    payload: { id },
+                  }).catch(onError);
+                },
+              });
+              return;
+            }
+            case "screenshot-unavailable":
+              onError(new Error(copy.imageAccessFailed));
+              return;
             case "translate-whole-page":
               await translateManually(true);
               return page.isActive();
@@ -286,6 +364,8 @@ export default defineContentScript({
       }
     })().catch(onError);
     ctx.onInvalidated(() => {
+      postCardTarget.dispose();
+      closeComparison?.();
       manualRevision++;
       editingRevision++;
       remove();

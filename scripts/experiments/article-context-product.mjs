@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import { chromium, expect } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  launchExtension,
+  profileDirectory,
+  requireCachedModel,
+  saveResult,
+} from "./harness.mjs";
+
+const result = { completed: false, usesModelStubs: false };
+const dental = process.argv.includes("--terminology");
+const mixed = dental && process.argv.includes("--mixed-senses");
+const url = `http://article-context.test/canoe?run=${crypto.randomUUID()}`;
+let session;
+try {
+  session = await launchExtension();
+  const { context, page: bridge } = session;
+  result.identity = session.backgroundIdentity;
+  result.cache = await requireCachedModel(session.send);
+  const worker = context
+    .serviceWorkers()
+    .find(
+      (worker) => worker.url() === new URL("background.js", bridge.url()).href,
+    );
+  assert.ok(worker);
+  await worker.evaluate(() => {
+    globalThis.articleRequests = [];
+    chrome.runtime.onMessage.addListener((message) => {
+      if (
+        message?.destination === "background" &&
+        message.action === "translate"
+      )
+        globalThis.articleRequests.push(message.payload);
+    });
+  });
+  await bridge.evaluate(async (dental) => {
+    const { settings } = await chrome.storage.local.get("settings");
+    await chrome.storage.local.set({
+      settings: {
+        ...settings,
+        sourceLanguage: "en",
+        targetLanguage: "zh",
+        autoTranslate: false,
+        mode: "bilingual",
+        siteRules: [],
+        glossary: dental ? { molar: "臼齿" } : {},
+        glossaries: [],
+      },
+    });
+  }, dental);
+  await context.route(url, (route) =>
+    route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: dental
+        ? `<!doctype html><title>Dental treatment</title><main><p>The dentist prepared the molar for a ceramic crown. The crown will protect the damaged tooth.</p><p id="passage">The crown arrived on Monday.</p><p>The crown cost 731 dollars.</p></main>`
+        : `<!doctype html><title>A canoe trip downstream</title><main><p>Maya paddled her canoe past the reeds and looked for a dry place beside the river.</p><p id="passage">She finally reached the bank.</p><p>She tied the canoe to a tree and climbed onto the grass.</p></main>`,
+    }),
+  );
+  await context.setOffline(true);
+  await session.send("prepare");
+  const page = await context.newPage();
+  await page.goto(url);
+  if (mixed)
+    await page.locator("main").evaluate((main) => {
+      const paragraph = document.createElement("p");
+      paragraph.id = "royal";
+      paragraph.textContent = "The king wore the crown at the coronation.";
+      main.append(paragraph);
+    });
+  const original = await page.locator("main").innerHTML();
+  const port = (
+    await readFile(join(profileDirectory, "DevToolsActivePort"), "utf8")
+  )
+    .trim()
+    .split("\n")[0];
+  const popupUrl = new URL("popup.html", bridge.url()).href;
+  async function popup() {
+    await page.bringToFront();
+    await bridge.evaluate(() => chrome.action.openPopup());
+    const connection = await chromium.connectOverCDP(
+      `http://127.0.0.1:${port}`,
+    );
+    const popup = connection
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((page) => page.url() === popupUrl);
+    assert.ok(popup, "Expected the native action popup");
+    return popup;
+  }
+  const target = page.locator('#passage [data-yaku-owned="translation"]');
+  const rendered = page.locator('main [data-yaku-owned="translation"]');
+  let panel = await popup();
+  await panel.getByRole("button", { name: "Translate this page" }).click();
+  await panel.close();
+  await expect(rendered).toHaveCount(mixed ? 4 : 3, { timeout: 90000 });
+  result.baseline = await target.textContent();
+  assert.match(result.baseline, dental ? /皇冠/u : /银行/u);
+  panel = await popup();
+  await panel.getByRole("button", { name: /^More reading controls/ }).click();
+  await panel
+    .getByRole("button", { name: "Translate with page context" })
+    .click();
+  await panel.close();
+  await expect(target).toContainText(dental ? /陶瓷.*冠/u : /岸/u, {
+    timeout: 90000,
+  });
+  await expect(rendered).toHaveCount(mixed ? 4 : 3, { timeout: 90000 });
+  result.contextual = await target.textContent();
+  assert.doesNotMatch(result.contextual, dental ? /皇冠/u : /银行/u);
+  if (dental) {
+    const requests = await worker.evaluate(() => globalThis.articleRequests);
+    assert.ok(
+      requests.some((request) => request.task === "extract-terminology"),
+    );
+    const propagated = requests.find(
+      (request) =>
+        request.text === "The crown arrived on Monday." &&
+        request.articleTerminology?.crown,
+    );
+    assert.match(
+      propagated?.articleTerminology.crown.target ?? "",
+      /陶瓷.*冠/u,
+    );
+    result.propagatedTerm = propagated.articleTerminology.crown.target;
+    await expect(rendered.nth(2)).toContainText("731");
+    if (mixed) {
+      const royal = page.locator('#royal [data-yaku-owned="translation"]');
+      await expect(royal).toContainText(/王冠|皇冠/u);
+      await expect(royal).not.toContainText("陶瓷");
+      result.royalSense = await royal.textContent();
+    }
+  }
+  await target.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = document.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  panel = await popup();
+  await panel.getByRole("button", { name: /^More reading controls/ }).click();
+  await panel.getByRole("button", { name: "Compare page context" }).click();
+  await panel.close();
+  const comparison = page.getByRole("dialog", { name: "Compare page context" });
+  await expect(comparison).toContainText(result.baseline, { timeout: 90000 });
+  await expect(comparison).toContainText(result.contextual);
+  await expect(comparison.locator("mark")).toContainText(
+    dental ? /陶瓷/u : "河岸",
+  );
+  await expect(target).toHaveText(result.contextual);
+  await comparison.getByRole("button", { name: "Close" }).click();
+  result.pairedComparison = true;
+  panel = await popup();
+  await panel.getByRole("button", { name: "Show original" }).click();
+  await expect(rendered).toHaveCount(0);
+  assert.equal(await page.locator("main").innerHTML(), original);
+  result.exactRestore = true;
+  result.completed = true;
+} catch (error) {
+  result.error = String(error);
+  process.exitCode = 1;
+} finally {
+  saveResult(
+    dental ? "article-terminology-product" : "article-context-product",
+    result,
+  );
+  console.log(JSON.stringify(result));
+  await session?.context.close();
+}

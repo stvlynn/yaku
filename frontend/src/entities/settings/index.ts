@@ -1,3 +1,11 @@
+import type { InputPrefixKey, InputTrailingKey } from "./input-keys";
+export {
+  inputKeyCharacters,
+  inputPunctuation,
+  inputTriggerPresses,
+} from "./input-keys";
+export type { InputPrefixKey, InputTrailingKey } from "./input-keys";
+
 export type WorkspaceMode =
   "text" | "writing" | "document" | "subtitle" | "image";
 
@@ -27,6 +35,12 @@ export interface Settings {
   selectionEnabled: boolean;
   hoverEnabled: boolean;
   inputEnabled: boolean;
+  inputTargetLanguage: string;
+  inputMatchConversation: boolean;
+  inputMatchPage: boolean;
+  inputSpaceTrigger: boolean;
+  inputPrefixKey: InputPrefixKey;
+  inputTrailingKey: InputTrailingKey;
   subtitlesEnabled: boolean;
   showFloatingButton: boolean;
   syncPreferences: boolean;
@@ -54,6 +68,12 @@ export const defaultSettings: Settings = {
   selectionEnabled: true,
   hoverEnabled: false,
   inputEnabled: true,
+  inputTargetLanguage: "en",
+  inputMatchConversation: true,
+  inputMatchPage: false,
+  inputSpaceTrigger: true,
+  inputPrefixKey: "/",
+  inputTrailingKey: "space",
   subtitlesEnabled: true,
   showFloatingButton: true,
   syncPreferences: false,

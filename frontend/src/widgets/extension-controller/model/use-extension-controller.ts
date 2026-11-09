@@ -272,7 +272,13 @@ export function useExtensionController(surface: Surface) {
   function openSettings() {
     void chrome.runtime.openOptionsPage();
   }
-  async function pageAction(action: "translate-page" | "restore-page") {
+  async function pageAction(
+    action:
+      | "translate-page"
+      | "translate-page-with-context"
+      | "restore-page"
+      | "compare-page-context",
+  ) {
     try {
       setError(undefined);
       const [tab] = await chrome.tabs.query({
@@ -280,11 +286,16 @@ export function useExtensionController(surface: Surface) {
         currentWindow: true,
       });
       if (!tab?.id) throw new Error(copy.noActivePage);
-      const reply = await chrome.tabs.sendMessage(tab.id, {
-        destination: "content",
-        action,
-      });
+      const reply = await chrome.tabs.sendMessage(
+        tab.id,
+        {
+          destination: "content",
+          action,
+        },
+        action === "compare-page-context" ? { frameId: 0 } : undefined,
+      );
       if (!reply?.ok) throw new Error(reply?.error ?? copy.pageUnavailable);
+      if (action === "compare-page-context") return;
       const state = await chrome.tabs.sendMessage(
         tab.id,
         {
@@ -458,7 +469,10 @@ export function useExtensionController(surface: Surface) {
       temporaryTranslationUntil: temporaryTranslation?.expiresAt,
       onStopTemporaryTranslation: () => void stopTemporaryTranslation(),
       onTranslatePage: () => void pageAction("translate-page"),
+      onTranslateWithContext: () =>
+        void pageAction("translate-page-with-context"),
       onRestorePage: () => void pageAction("restore-page"),
+      onCompareContext: () => void pageAction("compare-page-context"),
       onOpenWorkspace: openWorkspace,
       onOpenSettings: openSettings,
     },

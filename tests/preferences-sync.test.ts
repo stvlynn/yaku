@@ -105,6 +105,29 @@ function devices() {
 }
 
 describe("browser preference sync", () => {
+  it("loads a version 3 snapshot written before the Space trigger preference", () => {
+    const {
+      inputSpaceTrigger: _trigger,
+      inputPrefixKey: _prefix,
+      inputTrailingKey: _trailing,
+      inputTargetLanguage: _inputLanguage,
+      inputMatchConversation: _matchConversation,
+      inputMatchPage: _matchPage,
+      syncPreferences: _sync,
+      ...previousSettings
+    } = defaultSettings;
+    expect(
+      decodeSyncedSettings({
+        [syncManifestKey]: { version: 3, revision: "previous", count: 1 },
+        [`${syncPrefix}chunk.0`]: {
+          revision: "previous",
+          data: Buffer.from(JSON.stringify(previousSettings)).toString(
+            "base64",
+          ),
+        },
+      })?.settings.inputSpaceTrigger,
+    ).toBe(true);
+  });
   it("rejects a validly encoded but incomplete snapshot instead of replacing local data with defaults", () => {
     expect(() =>
       decodeSyncedSettings({

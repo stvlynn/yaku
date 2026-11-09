@@ -54,18 +54,41 @@ async function panelText(page: Page) {
 async function clickContextButton(page: Page, name: string) {
   const cdp = await page.context().newCDPSession(page);
   try {
-    const tree = await cdp.send("Accessibility.getFullAXTree");
-    const matches = tree.nodes.filter(
-      (node) => node.role?.value === "button" && node.name?.value === name,
-    );
+    const buttons = async () =>
+      (await cdp.send("Accessibility.getFullAXTree")).nodes.filter(
+        (node) => node.role?.value === "button",
+      );
+    const click = async (backendNodeId: number) => {
+      const box = await cdp.send("DOM.getBoxModel", { backendNodeId });
+      await page.mouse.click(
+        (box.model.content[0]! + box.model.content[2]!) / 2,
+        (box.model.content[1]! + box.model.content[5]!) / 2,
+      );
+    };
+    let visible = await buttons();
+    if (
+      name === "Undo translation" &&
+      !visible.some((node) => node.name?.value === name)
+    ) {
+      const chip = visible.find((node) =>
+        String(node.name?.value).startsWith("Input translation options, "),
+      );
+      if (chip?.backendDOMNodeId) {
+        await click(chip.backendDOMNodeId);
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        visible = await buttons();
+      }
+    }
+    const matches = visible.filter((node) => node.name?.value === name);
     expect(matches).toHaveLength(1);
-    const box = await cdp.send("DOM.getBoxModel", {
-      backendNodeId: matches[0]!.backendDOMNodeId!,
-    });
-    await page.mouse.click(
-      (box.model.content[0]! + box.model.content[2]!) / 2,
-      (box.model.content[1]! + box.model.content[5]!) / 2,
-    );
+    await click(matches[0]!.backendDOMNodeId!);
   } finally {
     await cdp.detach();
   }
@@ -176,6 +199,9 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
             hoverEnabled: true,
             selectionEnabled: true,
             inputEnabled: true,
+            inputPrefixKey: "/",
+            inputTrailingKey: "space",
+            inputTargetLanguage: "zh",
             autoTranslate: false,
             mode: "bilingual",
             glossary: {},
@@ -303,8 +329,143 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       await send("translate-input");
       await expect(input).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
       evidence.inputTranslation = await input.inputValue();
+      const inputToolbar = page
+        .locator('[data-yaku-owned="true"][style*="inset"]')
+        .first();
+      await expect(inputToolbar).toBeVisible();
+      await expect
+        .poll(async () => {
+          const editor = await input.boundingBox();
+          const toolbar = await inputToolbar.boundingBox();
+          return editor && toolbar
+            ? Math.round(editor.y - toolbar.y - toolbar.height)
+            : null;
+        })
+        .toBe(6);
+      const beforeScroll = (await inputToolbar.boundingBox())!.y;
+      await page.evaluate(() => {
+        document.body.style.minHeight = "200vh";
+        window.scrollTo(0, 30);
+      });
+      await expect
+        .poll(async () => {
+          const toolbar = await inputToolbar.boundingBox();
+          return toolbar && Math.round(beforeScroll - toolbar.y);
+        })
+        .toBe(30);
       await clickContextButton(page, "Undo translation");
       expect(await input.inputValue()).toBe("Hello friend.");
+      const suffixSource = "Keep https://example.test/info. /ja Good morning.";
+      await input.fill(suffixSource);
+      await send("translate-input");
+      await expect(input).toHaveValue(
+        /^Keep https:\/\/example\.test\/info\. .*おはよう/u,
+        { timeout: 180000 },
+      );
+      evidence.inputSuffix = await input.inputValue();
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue(suffixSource);
+      await input.fill("Hello friend.");
+      await page.keyboard.down("Space");
+      await page.keyboard.down("Space");
+      await page.keyboard.down("Space");
+      await page.keyboard.up("Space");
+      await expect(input).toHaveValue("Hello friend.   ");
+      expect(await panelText(page)).toBe("");
+      await input.fill("Hello friend.");
+      await page.keyboard.press("Home");
+      await page.keyboard.type("   ");
+      await expect(input).toHaveValue("   Hello friend.");
+      expect(await panelText(page)).toBe("");
+      await input.evaluate((element) => {
+        element.style.cssText = "position:fixed;top:2px;right:0";
+      });
+      await input.fill("Hello friend.");
+      await page.keyboard.type("   ");
+      await expect(input).toHaveValue(/[\u3400-\u9fff]/u, { timeout: 180000 });
+      evidence.inputSpaceTrigger = await input.inputValue();
+      await expect(inputToolbar).toBeVisible();
+      await expect
+        .poll(async () => {
+          const editor = await input.boundingBox();
+          const toolbar = await inputToolbar.boundingBox();
+          return editor && toolbar
+            ? Math.round(toolbar.y - editor.y - editor.height)
+            : null;
+        })
+        .toBe(6);
+      const toolbar = (await inputToolbar.boundingBox())!;
+      expect(toolbar.x + toolbar.width).toBeLessThanOrEqual(
+        (await page.evaluate(() => document.documentElement.clientWidth)) - 5,
+      );
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue("Hello friend.   ");
+      await input.evaluate((element) => element.removeAttribute("style"));
+      await input.fill("Keep // Good morning.");
+      await send("translate-input");
+      await expect(input).toHaveValue(/^Keep .*早/u, { timeout: 180000 });
+      const compactTree = await inputCdp.send("Accessibility.getFullAXTree");
+      const chip = compactTree.nodes.find(
+        (node) => node.name?.value === "Input translation options, Chinese",
+      );
+      expect(chip?.backendDOMNodeId).toBeDefined();
+      expect(
+        compactTree.nodes.some(
+          (node) => node.name?.value === "Input translation language",
+        ),
+      ).toBe(false);
+      await inputCdp.send("DOM.focus", {
+        backendNodeId: chip!.backendDOMNodeId!,
+      });
+      await page.keyboard.press("Enter");
+      const inputTree = await inputCdp.send("Accessibility.getFullAXTree");
+      const inputLanguage = inputTree.nodes.find(
+        (node) => node.name?.value === "Input translation language",
+      );
+      expect(inputLanguage?.backendDOMNodeId).toBeDefined();
+      await inputCdp.send("DOM.focus", {
+        backendNodeId: inputLanguage!.backendDOMNodeId!,
+      });
+      await page.keyboard.press("j");
+      await expect(input).toHaveValue(/^Keep .*おはよう/u, { timeout: 180000 });
+      await expect
+        .poll(() =>
+          bridge!.evaluate(async () => {
+            const stored = await chrome.storage.local.get("settings");
+            return (stored.settings as Settings).inputTargetLanguage;
+          }),
+        )
+        .toBe("ja");
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue("Keep // Good morning.");
+      await bridge.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        await chrome.storage.local.set({
+          settings: {
+            ...(stored.settings as Settings),
+            inputTargetLanguage: "zh",
+          },
+        });
+      });
+      const selectedInput = "Keep Good morning. Keep this too.";
+      await input.fill(selectedInput);
+      await input.evaluate((element: HTMLInputElement) =>
+        element.setSelectionRange(5, 18, "backward"),
+      );
+      await send("translate-input");
+      await expect(input).toHaveValue(/^Keep .*早.* Keep this too\.$/u, {
+        timeout: 180000,
+      });
+      evidence.selectedInput = await input.inputValue();
+      await clickContextButton(page, "Undo translation");
+      await expect(input).toHaveValue(selectedInput);
+      expect(
+        await input.evaluate((element: HTMLInputElement) => [
+          element.selectionStart,
+          element.selectionEnd,
+          element.selectionDirection,
+        ]),
+      ).toEqual([5, 18, "backward"]);
       await inputCdp.detach();
       const rich = page.locator("#rich");
       const originalRich = await rich.innerHTML();
@@ -317,6 +478,84 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       evidence.richTranslation = await rich.innerHTML();
       await clickContextButton(page, "Undo translation");
       expect(await rich.innerHTML()).toBe(originalRich);
+      await rich.locator("strong").evaluate((element) => {
+        const text = element.firstChild!;
+        getSelection()!.setBaseAndExtent(
+          text,
+          text.textContent!.length,
+          text,
+          0,
+        );
+      });
+      await send("translate-input");
+      await expect(rich.locator("strong")).toContainText(/[\u3400-\u9fff]/u, {
+        timeout: 180000,
+      });
+      await expect(rich.locator("p").last()).toHaveText("Good morning.");
+      await clickContextButton(page, "Undo translation");
+      expect(await rich.innerHTML()).toBe(originalRich);
+      expect(await page.evaluate(() => getSelection()?.toString())).toBe(
+        "friend",
+      );
+      const conversationUrl = `https://www.youtube.com/watch?yakuFixture=${nonce}`;
+      const japaneseComment =
+        "この動画はとても分かりやすかったです。詳しい説明をありがとうございます。次の動画も楽しみにしています。";
+      const englishDescription =
+        "The video shows how to care for plants. It includes advice about soil, watering and sunlight. Please subscribe for more videos.";
+      await context.route(conversationUrl, (route) =>
+        route.fulfill({
+          contentType: "text/html; charset=utf-8",
+          body: `<!doctype html><html lang="en"><main><div id="description-inline-expander">${englishDescription}</div><div id="comment"><yt-attributed-string id="content-text">${japaneseComment}<span data-yaku-owned="translation">${englishDescription}</span></yt-attributed-string><textarea></textarea></div></main></html>`,
+        }),
+      );
+      const conversation = await context.newPage();
+      await conversation.goto(conversationUrl);
+      await expect(conversation.locator("[data-yaku-floating]")).toBeVisible();
+      const reply = conversation.locator("textarea");
+      await reply.fill("Good morning.");
+      await sendFixture(bridge, conversation, "translate-input");
+      await expect(reply).toHaveValue(/おはよう/u, { timeout: 180000 });
+      evidence.conversationInput = await reply.inputValue();
+      evidence.conversationDetection = await bridge.evaluate(
+        async ([nearby, description]) => ({
+          nearby: await chrome.i18n.detectLanguage(nearby!),
+          description: await chrome.i18n.detectLanguage(description!),
+        }),
+        [japaneseComment, englishDescription],
+      );
+      await clickContextButton(conversation, "Undo translation");
+      await expect(reply).toHaveValue("Good morning.");
+      await reply.fill("// Good morning.");
+      await sendFixture(bridge, conversation, "translate-input");
+      await expect(reply).toHaveValue(/早/u, { timeout: 180000 });
+      const compact = conversation
+        .locator('[data-yaku-owned="true"][style*="inset"]')
+        .first();
+      await expect(compact).toBeVisible();
+      await expect(compact).toHaveCount(0, { timeout: 7000 });
+      await expect(reply).toHaveValue(/早/u);
+      const originalInputKeys = await bridge.evaluate(async () => {
+        const stored = await chrome.storage.local.get("settings");
+        const settings = stored.settings as Settings;
+        await chrome.storage.local.set({
+          settings: { ...settings, inputPrefixKey: ";", inputTrailingKey: "=" },
+        });
+        return settings;
+      });
+      await conversation.reload();
+      await expect(conversation.locator("[data-yaku-floating]")).toBeVisible();
+      await reply.fill("Keep ;ja Good morning.");
+      await conversation.keyboard.type("===");
+      await expect(reply).toHaveValue(/^Keep .*おはよう/u, { timeout: 180000 });
+      evidence.customInputKeys = await reply.inputValue();
+      await clickContextButton(conversation, "Undo translation");
+      await expect(reply).toHaveValue("Keep ;ja Good morning.===");
+      await bridge.evaluate(
+        (settings) => chrome.storage.local.set({ settings }),
+        originalInputKeys,
+      );
+      await conversation.close();
+      await page.bringToFront();
       await page.locator("#pick").evaluate((element) => {
         const range = document.createRange();
         range.selectNodeContents(element);
@@ -626,12 +865,13 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
       ok: true,
       value: false,
     });
-    await bridge.evaluate(() =>
+    const unload = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
         destination: "background",
         action: "unload-model",
       }),
     );
+    expect(unload.ok, JSON.stringify(unload)).toBe(true);
     await context.setOffline(true);
     const offline = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
@@ -639,7 +879,7 @@ test("real Chrome IME, rich editors, frames, hover, RTL, exclusions and SPA pres
         action: "prepare",
       }),
     );
-    expect(offline.ok).toBe(true);
+    expect(offline.ok, JSON.stringify(offline)).toBe(true);
     const offlineTranslation = await bridge.evaluate(() =>
       chrome.runtime.sendMessage({
         destination: "background",

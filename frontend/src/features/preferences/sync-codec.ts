@@ -109,7 +109,15 @@ export function decodeSyncedSettings(
     if (
       !record(value) ||
       keys.some(
-        (key) => key !== "syncPreferences" && !Object.hasOwn(value, key),
+        (key) =>
+          key !== "syncPreferences" &&
+          key !== "inputSpaceTrigger" &&
+          key !== "inputPrefixKey" &&
+          key !== "inputTrailingKey" &&
+          key !== "inputTargetLanguage" &&
+          key !== "inputMatchConversation" &&
+          key !== "inputMatchPage" &&
+          !Object.hasOwn(value, key),
       )
     )
       throw new Error(copy.syncInvalid);
@@ -117,7 +125,9 @@ export function decodeSyncedSettings(
       settings: validateSettings({
         ...Object.fromEntries(
           keys
-            .filter((key) => key !== "syncPreferences")
+            .filter(
+              (key) => key !== "syncPreferences" && Object.hasOwn(value, key),
+            )
             .map((key) => [key, value[key]]),
         ),
         syncPreferences: true,

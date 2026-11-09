@@ -11,9 +11,16 @@ export default defineBackground(() => {
   );
   const imageRequests = new Map<
     string,
-    { url: string; tab: number; frame: number; batch?: string }
+    {
+      url: string;
+      tab: number;
+      frame: number;
+      batch?: string;
+      inline?: boolean;
+    }
   >();
   const imageBatchKey = (id: string) => `imageBatch:${id}`;
+  const screenshotKey = (id: string) => `screenshot:${id}`;
   const getImageBatch = async (id: string) => {
     const key = imageBatchKey(id);
     return (await chrome.storage.session.get(key))[key] as
@@ -171,7 +178,27 @@ export default defineBackground(() => {
       ) {
         const payload = message.payload as
           { id?: string; data?: string } | undefined;
-        const grant = payload?.id ? imageRequests.get(payload.id) : undefined;
+        let grant = payload?.id ? imageRequests.get(payload.id) : undefined;
+        if (
+          !grant &&
+          payload?.id &&
+          message.action !== "translate-batch-image"
+        ) {
+          const key = screenshotKey(payload.id);
+          const saved = (await chrome.storage.session.get(key))[key] as
+            { tab: number; url: string } | undefined;
+          if (
+            saved &&
+            saved.tab === sender.tab?.id &&
+            saved.url === sender.url &&
+            sender.frameId === 0
+          ) {
+            await chrome.storage.session.remove(key);
+            if (message.action === "cancel-page-image") return null;
+            grant = { url: saved.url, tab: saved.tab, frame: 0, inline: true };
+            imageRequests.set(payload.id, grant);
+          }
+        }
         if (!grant && message.action === "cancel-page-image") return null;
         if (
           !grant ||
@@ -179,6 +206,12 @@ export default defineBackground(() => {
           grant.frame !== sender.frameId
         )
           throw new Error(copy.imageTargetMissing);
+        if (
+          grant.inline &&
+          message.action !== "cancel-page-image" &&
+          !payload?.data?.startsWith("data:image/png;base64,")
+        )
+          throw new Error(copy.imageAccessFailed);
         await ensureModel();
         if (message.action === "cancel-page-image") {
           imageRequests.delete(payload!.id!);
@@ -204,7 +237,10 @@ export default defineBackground(() => {
             action: "translate-image",
             payload: {
               id: payload!.id,
-              url: grant.url.startsWith("blob:") ? payload!.data : grant.url,
+              url:
+                grant.inline || grant.url.startsWith("blob:")
+                  ? payload!.data
+                  : grant.url,
               settings,
             },
           });
@@ -295,6 +331,17 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     await chrome.contextMenus.removeAll();
     chrome.contextMenus.create({
+      id: "translate-screenshot",
+      title: copy.translateScreenshot,
+      contexts: ["page"],
+    });
+    chrome.contextMenus.create({
+      id: "post-card",
+      title: copy.postCard,
+      contexts: ["page"],
+      documentUrlPatterns: ["https://*.x.com/*", "https://*.twitter.com/*"],
+    });
+    chrome.contextMenus.create({
       id: "toggle-page",
       title: copy.shortcutTogglePage,
       contexts: ["page"],
@@ -354,10 +401,56 @@ export default defineBackground(() => {
         frameId === undefined ? {} : { frameId },
       );
   };
+  const captureScreenshot = (tab?: chrome.tabs.Tab) => {
+    if (tab?.id !== undefined) {
+      const tabId = tab.id;
+      const id = crypto.randomUUID();
+      void (async () => {
+        const [before] = await chrome.tabs.query({
+          windowId: tab.windowId,
+          active: true,
+        });
+        if (before?.id !== tabId) return;
+        const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: "png",
+        });
+        const [after] = await chrome.tabs.query({
+          windowId: tab.windowId,
+          active: true,
+        });
+        if (after?.id !== tabId || after.url !== before.url) return;
+        if (!after.url) return;
+        const key = screenshotKey(id);
+        await chrome.storage.session.set({
+          [key]: { tab: tabId, url: after.url },
+        });
+        try {
+          await chrome.tabs.sendMessage(
+            tabId,
+            {
+              destination: "content",
+              action: "select-screenshot-area",
+              payload: { id, screenshot },
+            },
+            { frameId: 0 },
+          );
+        } finally {
+          await chrome.storage.session.remove(key);
+        }
+      })().catch(() => {
+        void sendToTab("screenshot-unavailable", tab, 0).catch(() => {});
+      });
+    }
+  };
   chrome.commands.onCommand.addListener((command, tab) => {
-    void sendToTab(command, tab);
+    if (command === "translate-screenshot") captureScreenshot(tab);
+    else void sendToTab(command, tab);
   });
   chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "translate-screenshot") {
+      captureScreenshot(tab);
+      return;
+    }
     if (info.menuItemId === "translate-page-images" && tab?.id !== undefined) {
       const sessionId = crypto.randomUUID();
       const tabId = tab.id;
@@ -411,7 +504,7 @@ export default defineBackground(() => {
       const keys = Object.entries(values)
         .filter(
           ([key, value]) =>
-            key.startsWith("imageBatch:") &&
+            (key.startsWith("imageBatch:") || key.startsWith("screenshot:")) &&
             value &&
             typeof value === "object" &&
             "tab" in value &&

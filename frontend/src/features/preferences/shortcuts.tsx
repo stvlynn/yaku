@@ -12,6 +12,7 @@ export function ShortcutPreferences() {
       .then(setCommands, () => setError(copy.shortcutsUnavailable));
   }, []);
   const labels: Record<string, string> = {
+    "translate-screenshot": copy.translateScreenshot,
     "toggle-page": copy.shortcutTogglePage,
     "translate-whole-page": copy.shortcutWholePage,
     "translate-input": copy.shortcutInput,

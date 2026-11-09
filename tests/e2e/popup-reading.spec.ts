@@ -67,6 +67,7 @@ test("More reading controls expose authoritative temporary-editing state, pendin
     await page.addInitScript((tabId) => {
       let reads: (() => void)[] = [];
       let writes: (() => void)[] = [];
+      let translated = false;
       const state: ReadingFixture = {
         editing: false,
         holdReads: true,
@@ -93,7 +94,11 @@ test("More reading controls expose authoritative temporary-editing state, pendin
           message: { action: string; payload?: boolean },
         ) => {
           if (message.action === "page-state")
-            return { ok: true, value: false };
+            return { ok: true, value: translated };
+          if (message.action === "translate-page-with-context") {
+            translated = true;
+            return { ok: true, value: true };
+          }
           if (message.action === "page-editing-state") {
             if (state.holdReads)
               await new Promise<void>((resolve) => reads.push(resolve));
@@ -192,6 +197,13 @@ test("More reading controls expose authoritative temporary-editing state, pendin
     await page.keyboard.press("Space");
     await expect(editing).toHaveAttribute("aria-checked", "false");
     await expect(more()).not.toHaveAttribute("data-editing-active", "true");
+    await panel
+      .getByRole("button", { name: "Translate with page context" })
+      .click();
+    await expect(panel).not.toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Show original" }),
+    ).toBeVisible();
     await writeFile(
       ".workspace/qa/popup-reading-ui.json",
       JSON.stringify(

@@ -46,6 +46,59 @@ All three result files under `.workspace/experiments/results/` have `completed: 
 
 ## Implementation consequence
 
+Reading controls now offers **Translate with page context** as an explicit page translation action. The collector supplies the title and adjacent eligible original text from the same DOM root. It reuses the regular page scope and exclusions, and bounds each excerpt to 300 Unicode code points and the title to 160. These are excerpt limits for the initial workflow. The request carries that data separately from format instructions and manual terminology. Ordinary Translate remains the baseline, and contextual translation is a fresh reading run with the existing restore and retranslation behavior.
+
+`scripts/experiments/article-context-product.mjs` passed on an ordinary HTTP fixture with the installed extension, its native action popup and a seeded HY-MT2 cache in offline mode. The ordinary action rendered `她终于到达了银行。`, and the contextual action rendered `她终于到达了河岸。`. Show original removed the translations and restored the exact original article HTML. The result is recorded in `.workspace/experiments/results/article-context-product.json`. Run it with a complete `YAKU_MODEL_PROFILE` for the current build.
+
 The evidence supports implementing an explicit, source-grounded article-background path with separately typed semantic context and unchanged format instructions. It does **not** justify presenting automatic summaries as verified facts or claiming automatic terminology/context parity. Generated-theme preparation, extractive grounding, automatic term adoption and their lifecycle remain required work from the [article-context specification](article-context.md).
 
 Next compare grounded extraction against the observed free summaries, then test ordered automatic-term propagation and manual-term precedence. Preserve the direct-original arm as the control. Comparison must show two independently generated results from one frozen source/settings snapshot, with identical manual terminology and format constraints; it must not overwrite temporary edits or manufacture a visible difference when results match.
+
+## Ordered terminology experiment
+
+Run `node scripts/experiments/article-context-generation.mjs --terminology` with the existing local WebGPU fixtures. Three consecutive observatory passages were translated in each arm. The manual mapping `eastern inlet → 东侧水道` stayed constant. The extraction arms could carry an accepted pair forward only if both strings appeared in that batch's source and translation. Later batches received matching accumulated terms, with manual terms retaining precedence.
+
+| Arm                                              | Protocol result                                                          | Total generation for three batches |
+| ------------------------------------------------ | ------------------------------------------------------------------------ | ---------------------------------: |
+| Translation baseline                             | Both recurring terms translated consistently                             |                            22.51 s |
+| Separate extraction                              | Three JSON objects parsed. Full name and sensor term reached batch three |                            45.09 s |
+| Combined production prompt with JSON instruction | Three plain-text translations, zero valid paired JSON responses          |                            19.76 s |
+
+The separate extractor initially split `Northwater Observatory` and produced empty values for two candidates. It returned the full institution name and sensor term on the second batch. The final batch included a proposed translation lacking the `的` present in the actual text, so exact grounding rejected it. String occurrence alone could still accept an overly broad alias such as `Northwater → 北水`.
+
+Both the baseline and separate extraction used `北水观测站` and `潮汐流量传感器` consistently in all three batches. The measured gain was successful propagation, with no improvement in consistency on this fixture and about twice the generation time. The next contrast needs an initially ambiguous later mention and a distinct combined prompt whose output contract is specified once. The raw output, timing, accepted and rejected candidates, and per-batch requests are in `.workspace/experiments/results/article-terminology.json`.
+
+### Ambiguous later mentions
+
+Add `--ambiguous` to the terminology command to run three dental passages. The first explicitly establishes a ceramic dental crown. Two later passages use only `crown`. The manual `molar → 臼齿` mapping was held fixed.
+
+| Arm                                                | Later `crown` translations                             | Generation time |
+| -------------------------------------------------- | ------------------------------------------------------ | --------------: |
+| Baseline                                           | `皇冠`, `皇冠`                                         |         13.41 s |
+| Separate extraction                                | `皇冠`, `皇冠`                                         |         25.36 s |
+| Combined prompt with a single output contract      | Two of three responses failed the paired JSON protocol |         15.95 s |
+| Recurrence-guided separate extraction (`--guided`) | `陶瓷冠`, `陶瓷冠`                                     |         20.31 s |
+
+Unguided extraction found `ceramic crown` in the first passage, which could not match either later mention. It then learned `crown → 皇冠` from the first incorrect translation. Both strings occurred in that pair, demonstrating that occurrence validation alone cannot prevent a semantic error from propagating.
+
+The guided extractor could inspect later original passages and chose the shorter recurring `crown` while grounding `陶瓷冠` in the initial dental translation. Both later translations preserved that meaning and retained `731` where present. The guided run omitted extraction after the final passage because it had no downstream consumer. Timing came from separate sequential runs and should not be treated as a precise relative benchmark. Evidence is in `article-terminology-ambiguity.json` and `article-terminology-guided.json` under the local experiment results directory.
+
+This supplies a positive fixture for recurrence-guided article terminology and a negative fixture for unguided error propagation. Before broader use, test articles where a repeated spelling intentionally changes sense, and preserve an explicit manual term when it disagrees with the automatically proposed mapping.
+
+The installed extension now supports the internal `extract-terminology` model task. `scripts/experiments/article-terminology-runtime.mjs` exercised the actual background and offscreen translation route offline with a seeded cache. HY-MT2 returned `crown → 陶瓷冠`, and both later calls retained the dental meaning and the number `731`. The extraction call took 4.71 seconds in this run. A regression test checks that a conflicting manual key is excluded from automatic results, including case variants. The runtime returns only candidates with current source, translated text and later source evidence.
+
+The **Translate with page context** action now also schedules recurring terminology extraction between rendered passages. Candidates can apply to the next four eligible passages in the same parent, only where the candidate appears in the captured later source. The ordinary translation action leaves this work out of its requests. Automatic mappings are scoped to the active run and cleared on restore or source changes. Manual terms retain precedence. The comparison baseline keeps manual terms and the original formatting instructions, and the contextual result can also include the automatic mappings that were used for the displayed passage.
+
+Automatic mappings carry the earlier source excerpt and appear as conditional context. They are separate from the manual glossary. An installed-runtime contrast (`article-terminology-runtime.mjs --mixed-senses`) found that forcing `crown → 陶瓷冠` corrected the dental price sentence but corrupted a coronation sentence. The conditional prompt preserved the ceramic crown and `731` in the dental sentence and returned `王冠` in the coronation sentence. The ordinary baseline returned `皇冠` for the dental sentence and `王冠` for the coronation sentence.
+
+The real Chrome run of `scripts/experiments/article-context-product.mjs --terminology` passed with an offline seeded model. Passive worker observation confirmed `crown → 陶瓷冠` in the subsequent page request. The ordinary action rendered `那个皇冠在周一送达了。` and the contextual action rendered `陶瓷冠在周一送达。`. The next passage retained `731`, the comparison showed the paired results, and Show original restored exact article HTML. Evidence is in `.workspace/experiments/results/article-terminology-product.json`.
+
+With `--terminology --mixed-senses`, the installed product also preserved `国王在加冕仪式上戴着那顶王冠。` in a sibling paragraph following the dental paragraphs. This verifies one intentional sense change with real HY-MT2. Broader ambiguity, topic changes and languages need separate fixtures.
+
+## Theme preparation using original sentence IDs
+
+`node scripts/experiments/article-context-generation.mjs --grounded-theme` compares the nearest sentence, all candidate sentences, and one original sentence selected by HY-MT2. The four original sense fixtures gain an unrelated nearest sentence about an archive and a price of `731` dollars. The title, passage to translate and production translation prompt remain constant. The preparation returns a JSON integer, which is resolved to the original sentence without allowing the model to supply new prose.
+
+All four selections were valid IDs. Three picked relevant evidence. The river fixture instead picked the archive sentence and still translated `bank` as `岸边`, plausibly using the canoe title. The music fixture distinguishes the arms: nearest produced `他的唱声非常完美。`, while all-source and selected-original preserved the pitch sense as `音准`. The finance, river and baseball translations preserved the intended senses in all three arms. The distractor price did not appear in any translated passage.
+
+Selected-original translation prompts used 103–108 tokens versus 139–152 for all-source. Selection added 1.41–4.36 seconds per passage, and the shorter prompts did not show a compensating end-to-end advantage here. ID-based extraction avoids invented preparation prose, but a valid ID can still select irrelevant evidence. The current evidence supports using intact source excerpts and gives no reason to add a per-passage model selection call to the ordinary contextual action. The next evaluation should vary title informativeness and article length, and compare one reusable article-level snapshot with a deterministic source selection. Raw prompts, timings, selection IDs and translations are in `.workspace/experiments/results/article-grounded-theme.json`.

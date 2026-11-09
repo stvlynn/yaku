@@ -27,6 +27,7 @@ const contentOf = (node: Node) =>
 export interface InlineCodecOptions {
   preserveBlocks?: boolean;
   preserveProtected?: boolean;
+  preserveEditorElements?: boolean;
   /** Reconcile detached file DOM only. Original attributes never enter model output. */
   documentPreservation?: { baseUrl: string };
 }
@@ -188,6 +189,8 @@ export function createInlineCodec(
         (inlineTags.has(tag) && !!protectedContent);
       return mark(element, parent, true, semanticCopy);
     }
+    if (options.preserveEditorElements)
+      return mark(element, parent, !!protectedContent);
     if (!preservation && !protectedContent && !containsSelected) return "";
     const allowedBlock = options.preserveBlocks && blockTags.has(tag);
     if (
@@ -238,6 +241,7 @@ export function createInlineCodec(
           !marker ||
           marker.open !== token ||
           seen.has(marker.id) ||
+          (options.preserveEditorElements && marker.id !== seen.size) ||
           marker.parent !== (stack.at(-1)?.marker.id ?? null)
         )
           throw new Error(invalidMarkers);
@@ -298,6 +302,11 @@ export function createInlineCodec(
     return parts.flatMap((part) => {
       if ("text" in part) return [document.createTextNode(part.text)];
       const { marker, children } = part;
+      if (options.preserveEditorElements) {
+        const original = marker.node.cloneNode(marker.opaque) as Element;
+        if (!marker.opaque) original.append(...materialize(children, mode));
+        return [original];
+      }
       if (marker.opaque) {
         if (preservation) {
           if (mode === "replace") return [marker.node];

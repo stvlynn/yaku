@@ -57,6 +57,212 @@ const chooseText = (element: Element, mouseup = true) => {
 };
 
 describe("editable input translation", () => {
+  it("uses the configured prefix and removes only the three trailing trigger characters", async () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><b>Keep</b> ；ja <em>Good morning.。。。</em></div>';
+    const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+    editor.focus();
+    const run = vi.fn<Translate>(async ({ id, text }) => ({
+      id,
+      text: text.replace("Good morning.", "おはようございます。"),
+      elapsedMs: 0,
+    }));
+    const original = editor.innerHTML;
+    await install(run, undefined, {
+      ...defaultSettings,
+      inputPrefixKey: ";",
+      inputTrailingKey: ".",
+    }).translateInput(".");
+    expect(run.mock.calls[0]?.[0]).toMatchObject({ targetLanguage: "ja" });
+    expect(run.mock.calls[0]?.[0].text).not.toMatch(/Keep|。。。/u);
+    expect(editor.innerHTML).toBe("<b>Keep</b> <em>おはようございます。</em>");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.innerHTML).toBe(original);
+  });
+  it("uses the opt-in page language but keeps the saved target when it matches the draft", async () => {
+    document.body.innerHTML =
+      "<main><p>Texte de la page.</p><textarea></textarea></main>";
+    const editor = document.querySelector("textarea")!;
+    editor.focus();
+    const run = vi.fn<Translate>(async ({ id }) => ({
+      id,
+      text: "translated",
+      elapsedMs: 0,
+    }));
+    const controller = installContextTranslation({
+      document,
+      translate: run,
+      getSettings: () => ({
+        ...defaultSettings,
+        inputMatchPage: true,
+        inputTargetLanguage: "zh",
+      }),
+      detectLanguage: async (text) => (text === "Hello." ? "en" : "fr"),
+      onError: (error) => {
+        throw error;
+      },
+    });
+    controllers.push(controller);
+    editor.value = "Hello.";
+    await controller.translateInput();
+    expect(run.mock.calls[0]?.[0].targetLanguage).toBe("fr");
+    editor.value = "Bonjour.";
+    await controller.translateInput();
+    expect(run.mock.calls[1]?.[0].targetLanguage).toBe("zh");
+  });
+  it("translates only the native selection and restores its direction on undo", async () => {
+    document.body.innerHTML =
+      "<textarea>Keep /ja Good morning. And keep this.</textarea>";
+    const editor = document.querySelector("textarea")!;
+    editor.focus();
+    editor.setSelectionRange(9, 22, "backward");
+    const run = vi.fn<Translate>(async ({ id }) => ({
+      id,
+      text: "早上好。",
+      elapsedMs: 0,
+    }));
+    await install(run, undefined, {
+      ...defaultSettings,
+      inputTargetLanguage: "zh",
+    }).translateInput();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      text: "Good morning.",
+      targetLanguage: "zh",
+    });
+    expect(editor.value).toBe("Keep /ja 早上好。 And keep this.");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.value).toBe("Keep /ja Good morning. And keep this.");
+    expect([
+      editor.selectionStart,
+      editor.selectionEnd,
+      editor.selectionDirection,
+    ]).toEqual([9, 22, "backward"]);
+  });
+  it("joins partial rich paragraphs without changing the surrounding markup or undo selection", async () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><p class="first">Keep <b>Good morning</b>.</p><p class="second">Good night to you.</p></div>';
+    const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+    editor.focus();
+    const first = editor.querySelector("b")!.firstChild!;
+    const last = editor.lastChild!.firstChild!;
+    window.getSelection()!.setBaseAndExtent(last, 10, first, 0);
+    const run = vi.fn<Translate>(async ({ id, text }) => ({
+      id,
+      text: text
+        .replace("Good morning", "早上好")
+        .replace("Good night", "晚安"),
+      elapsedMs: 0,
+    }));
+    await install(run).translateInput();
+    expect(run.mock.calls[0]?.[0].text).not.toMatch(/Keep|to you/u);
+    expect(editor.innerHTML).toBe(
+      '<p class="first">Keep <b>早上好</b>.</p><p class="second">晚安 to you.</p>',
+    );
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    const selection = window.getSelection()!;
+    expect([
+      selection.anchorNode,
+      selection.anchorOffset,
+      selection.focusNode,
+      selection.focusOffset,
+    ]).toEqual([last, 10, first, 0]);
+  });
+  it("retargets from the original suffix, remembers the choice, and undoes both translations", async () => {
+    document.body.innerHTML = "<textarea>Keep // Good morning</textarea>";
+    const editor = document.querySelector("textarea")!;
+    editor.focus();
+    const run = vi.fn<Translate>(async (request) => ({
+      id: request.id,
+      text: request.targetLanguage === "ja" ? "おはよう" : "早上好",
+      elapsedMs: 0,
+    }));
+    const saveInputTargetLanguage = vi.fn(async () => {});
+    const onError = vi.fn();
+    const controller = installContextTranslation({
+      document,
+      translate: run,
+      getSettings: () => ({ ...defaultSettings, inputTargetLanguage: "zh" }),
+      onError,
+      saveInputTargetLanguage,
+    });
+    controllers.push(controller);
+    await controller.translateInput();
+    expect(editor.value).toBe("Keep 早上好");
+    const language = shadow().querySelector("select")!;
+    run.mockRejectedValueOnce(new Error("Model unavailable"));
+    language.value = "ja";
+    language.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(language.value).toBe("zh"));
+    expect(editor.value).toBe("Keep 早上好");
+    expect(onError).toHaveBeenCalledOnce();
+    expect(saveInputTargetLanguage).not.toHaveBeenCalled();
+    language.value = "ja";
+    language.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(editor.value).toBe("Keep おはよう"));
+    expect(
+      run.mock.calls.map(([request]) => [request.targetLanguage, request.text]),
+    ).toEqual([
+      ["zh", "Good morning"],
+      ["ja", "Good morning"],
+      ["ja", "Good morning"],
+    ]);
+    expect(saveInputTargetLanguage).toHaveBeenCalledWith("ja");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.value).toBe("Keep // Good morning");
+  });
+  it("translates only the suffix and restores the exact native value on undo", async () => {
+    document.body.innerHTML = "<textarea></textarea>";
+    const editor = document.querySelector("textarea")!;
+    const original = "Keep https://example.test/hello. // /ja Good morning";
+    editor.value = original;
+    editor.focus();
+    const run = vi.fn<Translate>(async (request) => ({
+      id: request.id,
+      text: "おはようございます",
+      elapsedMs: 0,
+    }));
+    await install(run).translateInput();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      text: "Good morning",
+      targetLanguage: "ja",
+    });
+    expect(editor.value).toBe(
+      "Keep https://example.test/hello. // おはようございます",
+    );
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.value).toBe(original);
+  });
+  it("retains rich prefix formatting and keeps the original nodes for undo", async () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><b>Keep</b> // <em>Good morning</em></div>';
+    const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+    const original = editor.innerHTML;
+    const bold = editor.firstChild;
+    editor.focus();
+    const run = vi.fn<Translate>(async (request) => ({
+      id: request.id,
+      text: request.text.replace("Good morning", "早上好"),
+      elapsedMs: 0,
+    }));
+    await install(run).translateInput();
+    expect(run.mock.calls[0]?.[0].text).not.toContain("Keep");
+    expect(editor.innerHTML).toBe("<b>Keep</b> <em>早上好</em>");
+    [...shadow().querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo translation")!
+      .click();
+    expect(editor.innerHTML).toBe(original);
+    expect(editor.firstChild).toBe(bold);
+  });
   it.each(["input", "selection"])(
     "preserves declared source language and rejects a stale %s result after it changes",
     async (kind) => {

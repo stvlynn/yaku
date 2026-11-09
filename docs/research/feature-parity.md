@@ -70,6 +70,26 @@ Observed settings families:
 
 Observed theme identifiers (labels are summarized, not artwork): none, grey, dashed, dotted, dashedBorder, solidBorder, underline, mask, opacity, paper, dividingLine, highlight, marker, marker2, blockquote, weakening, italic, bold, thinDashed, nativeDashed, nativeDotted, nativeUnderline, wavy, background. Localization has a few duplicate labels; identifier presence does not prove every theme is exposed together.
 
+## Input directives
+
+The supplied input defaults name `/` as the starting key and Space as the trailing key, with three repetitions and a 200 ms desktop interval between presses. English locale descriptions distinguish `//` for a suffix and `/ja` for a target-language override. Yaku accepts those directives through the input-translation command, context action and Space gesture. It uses the last recognized directive at a whitespace boundary, which keeps slashes inside URLs out of the directive parser.
+
+The Space gesture counts browser-confirmed edits at the end of the same focused editor. Counting keydowns alone would also count prevented edits and held-key repeats. Counting input events alone would miss the repeat flag. Yaku observes the actual input and uses the keyboard repeat signal to reset the sequence. The existing transaction preserves the full original editor state for undo, including the three spaces, and omits trailing whitespace from the model request. The gesture can be disabled separately in settings.
+
+The supplied artifact sets the independent input target to English. Its desktop result bar retranslates the original input when the user changes the target, then persists the successful manual choice. Yaku uses the same source snapshot for each target, resolves terminology for the selected target, and restores the original editor with one undo. Inline language directives take precedence over the saved default for the initial request.
+
+The reference's input demo advertises translating the selected part with the shortcut. Yaku gives an active editor selection priority over full-field directives. The native transaction keeps the prefix and suffix out of the model request. Rich text uses a cloned DOM Range and reattaches partial boundary wrappers, preserving their formatting and surrounding content across paragraph boundaries. Undo restores the original selection direction and original rich nodes. [Reference input demo](https://immersivetranslate.com/en/input/) · [DOM Range algorithms](https://dom.spec.whatwg.org/#ranges)
+
+The artifact enables site-specific context detection by default on YouTube, X, Telegram, WhatsApp and Reddit. Yaku looks for the source nearest the composer where a reply scope is available, then samples recent source messages or the post description according to the site. It excludes extension-generated translation and editable text, checks Chrome's local language observation, and retains the saved target if the inference would match the draft language. The separately configurable page fallback defaults to off. The Chrome fixture contrasts a Japanese reply thread with an English video description and verifies that the reply uses Japanese while `//` uses the saved target. [Chrome language detection](https://developer.chrome.com/docs/extensions/reference/api/i18n#method-detectLanguage)
+
+The packaged desktop bar prefers the top edge of the editor with a 6 px gap, flips below near the viewport top and clamps at viewport edges. Yaku anchors the existing result actions using the Floating UI version already resolved by Base UI. Position updates follow scrolling, resize and layout shifts while the bar is mounted. The translated text stays in the editor and remains available to assistive technology and result actions. Editing or clicking away dismisses the bar. [Floating UI positioning lifecycle](https://floating-ui.com/docs/autoupdate)
+
+The packaged options offer slash, equals, semicolon, comma, period and colon for both key roles, plus Space for the trailing key and None for the prefix. Yaku prevents assigning the same punctuation to both roles and supports the packaged full-width punctuation aliases. A trusted sequence at the end of the editor removes exactly the three trigger characters from the model request and restores them on undo. The default remains slash and Space. The gesture uses a 200 ms interval on desktop and the artifact's 300 ms interval when Chrome reports a coarse primary pointer.
+
+The desktop input result starts as a compact current-language button. Opening it exposes the target and undo actions and keeps them visible. The unopened button expires after five seconds, with the timer paused while it has keyboard focus. The same editor transaction remains in use when the user expands the controls and changes the target. [WAI disclosure keyboard interaction](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
+
+Live platform checks, physical mobile input timing and the reference bar's searchable language menu remain open.
+
 ## Document and file matrix
 
 | Format/workflow | Static evidence | Observed advertised operations | Unknown / verification needed |

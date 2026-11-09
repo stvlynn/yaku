@@ -2,7 +2,11 @@ import {
   resolveSourceLanguagePolicy,
   type Settings,
 } from "../../../entities/settings";
-import type { Translate, TranslationMode } from "../../../entities/translation";
+import type {
+  Translate,
+  TranslationMode,
+  TranslationRequest,
+} from "../../../entities/translation";
 import { alreadyTargetLanguage, reliableLanguageObservation } from "./language";
 import { createInlineCodec } from "../../../shared/translation-markup";
 import { createRequestId } from "../../../shared/request-id";
@@ -67,6 +71,13 @@ const styles = {
 } satisfies Record<Settings["style"], string>;
 
 type RecordEntry = {
+  articleBackground?: { title: string; nearby: readonly string[] };
+  later?: readonly { block: TranslationRoot; text: string }[];
+  comparison?: {
+    request: Omit<TranslationRequest, "id">;
+    decode: (text: string) => DocumentFragment;
+    automatic?: TranslationRequest["articleTerminology"];
+  };
   block: TranslationRoot;
   nodes: Text[];
   values: string[];
@@ -112,6 +123,13 @@ export function createPageTranslator({
   let observer: MutationObserver | undefined;
   let visibility: IntersectionObserver | undefined;
   let wholePageScope = false;
+  let withArticleContext = false;
+  let contextQueue = Promise.resolve();
+  let terminologyRevision = 0;
+  const articleTerms = new Map<
+    TranslationRoot,
+    NonNullable<TranslationRequest["articleTerminology"]>
+  >();
   let translationSettings = "";
   const routeKey = () =>
     `${view.location.pathname}${view.location.search}${/^#!?\//.test(view.location.hash) ? view.location.hash : ""}`;
@@ -133,7 +151,10 @@ export function createPageTranslator({
     observedRoute = next;
     if (active)
       void controller
-        .translatePage({ wholePage: wholePageScope })
+        .translatePage({
+          wholePage: wholePageScope,
+          articleContext: withArticleContext,
+        })
         .catch(onError);
   }
   view.addEventListener("popstate", routeChanged, { signal: lifecycle.signal });
@@ -361,6 +382,17 @@ export function createPageTranslator({
     );
   }
 
+  function scheduleRender(entry: RecordEntry): Promise<void> {
+    if (!withArticleContext) return render(entry);
+    const token = generation;
+    const task = contextQueue.then(async () => {
+      if (token === generation && entries.get(entry.block) === entry)
+        await render(entry);
+    });
+    contextQueue = task.catch(onError);
+    return task;
+  }
+
   async function render(entry: RecordEntry): Promise<void> {
     if (!active || disposed || entry.pending || entry.target) return;
     entry.pending = true;
@@ -409,13 +441,23 @@ export function createPageTranslator({
       entry.originals = codec.originals;
       const id = createRequestId();
       requests.add(id);
-      const result = await translate({
-        id,
+      const request = {
         text: codec.text,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         glossary: settings.glossary,
         context: codec.instruction,
+        articleBackground: withArticleContext
+          ? entry.articleBackground
+          : undefined,
+      };
+      const automatic = withArticleContext
+        ? articleTerms.get(entry.block)
+        : undefined;
+      const result = await translate({
+        id,
+        ...request,
+        articleTerminology: automatic,
       }).finally(() => requests.delete(id));
       if (
         !active ||
@@ -429,6 +471,13 @@ export function createPageTranslator({
       target.lang = settings.targetLanguage;
       target.dir = "auto";
       target.append(codec.decode(result.text));
+      entry.comparison = entry.articleBackground
+        ? {
+            request: { ...request, articleBackground: entry.articleBackground },
+            decode: codec.decode,
+            automatic,
+          }
+        : undefined;
       target.addEventListener("click", (event) => {
         if (!editing) return;
         event.stopPropagation();
@@ -443,6 +492,54 @@ export function createPageTranslator({
         entry.target = target;
         refreshStyle(entry);
       });
+      const later = withArticleContext ? entry.later : undefined;
+      if (later?.length) {
+        const revision = terminologyRevision;
+        const extractionId = createRequestId();
+        requests.add(extractionId);
+        try {
+          const extracted = await translate({
+            id: extractionId,
+            task: "extract-terminology",
+            text: entry.values.join(""),
+            sourceLanguage: request.sourceLanguage,
+            targetLanguage: request.targetLanguage,
+            glossary: request.glossary,
+            terminologyEvidence: {
+              translation: target.textContent ?? "",
+              later: later.map((item) => item.text),
+            },
+          });
+          if (
+            token !== generation ||
+            revision !== terminologyRevision ||
+            !sourceUnchanged(entry)
+          )
+            return;
+          for (const item of later) {
+            const matching = Object.fromEntries(
+              Object.entries(extracted.terms ?? {})
+                .filter(([term]) => item.text.includes(term))
+                .map(([term, target]) => [
+                  term,
+                  {
+                    target,
+                    sourcePassage: Array.from(entry.values.join(""))
+                      .slice(0, 300)
+                      .join(""),
+                  },
+                ]),
+            );
+            if (Object.keys(matching).length)
+              articleTerms.set(item.block, {
+                ...matching,
+                ...articleTerms.get(item.block),
+              });
+          }
+        } finally {
+          requests.delete(extractionId);
+        }
+      }
     } catch (error) {
       if (active && token === generation && version === entry.version)
         onError?.(error);
@@ -480,7 +577,18 @@ export function createPageTranslator({
     }
     observeRoots();
     const added: RecordEntry[] = [];
-    for (const [block, nodes] of grouped) {
+    const blocks = [...grouped];
+    const excerpt = (nodes: Text[]) =>
+      Array.from(
+        nodes
+          .map((node) => node.data)
+          .join("")
+          .trim(),
+      )
+        .slice(0, 300)
+        .join("");
+    const title = Array.from(document.title.trim()).slice(0, 160).join("");
+    for (const [index, [block, nodes]] of blocks.entries()) {
       const existing = entries.get(block);
       if (existing?.target || existing?.pending || existing?.skipped) continue;
       const entry: RecordEntry = existing ?? {
@@ -497,6 +605,27 @@ export function createPageTranslator({
       };
       entry.nodes = nodes;
       entry.values = nodes.map((node) => node.data);
+      if (withArticleContext && block.nodeType === 1) {
+        const parent = (block as Element).parentElement;
+        entry.later = blocks
+          .slice(index + 1, index + 5)
+          .filter(
+            ([next]) =>
+              next.nodeType === 1 && (next as Element).parentElement === parent,
+          )
+          .map(([block, nodes]) => ({ block, text: excerpt(nodes) }));
+      }
+      {
+        const nearby = [blocks[index - 1], blocks[index + 1]]
+          .flatMap((neighbor) =>
+            neighbor && neighbor[0].getRootNode() === block.getRootNode()
+              ? [excerpt(neighbor[1])]
+              : [],
+          )
+          .filter(Boolean);
+        entry.articleBackground =
+          title || nearby.length ? { title, nearby } : undefined;
+      }
       entries.set(block, entry);
       added.push(entry);
     }
@@ -505,14 +634,17 @@ export function createPageTranslator({
 
   async function scan(immediate: boolean) {
     if (scope && !scope.isConnected) {
-      await controller.translatePage({ wholePage: wholePageScope });
+      await controller.translatePage({
+        wholePage: wholePageScope,
+        articleContext: withArticleContext,
+      });
       return;
     }
     for (const entry of collect()) {
       if (!active) break;
       if (!immediate && visibility)
         visibility.observe(visibilityTarget(entry.block));
-      else await render(entry);
+      else await scheduleRender(entry);
     }
   }
 
@@ -592,6 +724,10 @@ export function createPageTranslator({
       )
         changed = true;
     }
+    if (changed) {
+      terminologyRevision++;
+      articleTerms.clear();
+    }
     if (changed && !scheduled) {
       scheduled = true;
       queueMicrotask(() => {
@@ -604,6 +740,8 @@ export function createPageTranslator({
   function restore() {
     active = false;
     generation++;
+    contextQueue = Promise.resolve();
+    articleTerms.clear();
     for (const id of requests) void cancel?.(id).catch(onError);
     requests.clear();
     observer?.disconnect();
@@ -615,6 +753,89 @@ export function createPageTranslator({
 
   const controller = {
     isActive: () => active,
+    translatedPassages(root: Element) {
+      const passages = [...entries.values()].filter((entry) =>
+        root.contains(entry.block),
+      );
+      if (
+        !passages.length ||
+        passages.some(
+          (entry) => !entry.target?.isConnected || !sourceUnchanged(entry),
+        )
+      )
+        return;
+      return {
+        source: passages.map((entry) => entry.values.join("")).join("\n"),
+        translation: passages
+          .map((entry) => entry.target!.innerText)
+          .join("\n"),
+      };
+    },
+    comparisonBlock() {
+      const candidates = [...entries.values()].filter(
+        (entry) => entry.target?.isConnected && entry.comparison,
+      );
+      const selection = document.getSelection()?.anchorNode;
+      return (
+        candidates.find(
+          (entry) => selection && entry.block.contains(selection),
+        ) ??
+        candidates.find((entry) => {
+          const rect = entry.target!.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < view.innerHeight;
+        }) ??
+        candidates[0]
+      )?.block;
+    },
+    async compareContext(block: TranslationRoot, signal: AbortSignal) {
+      const entry = entries.get(block);
+      if (!entry?.target || !entry.comparison || !sourceUnchanged(entry))
+        return;
+      const { request, decode, automatic } = entry.comparison;
+      const target = entry.target;
+      const token = generation;
+      const route = routeKey();
+      const settings = settingsKey();
+      signal.throwIfAborted();
+      const compare = async (
+        articleBackground?: TranslationRequest["articleBackground"],
+      ) => {
+        const id = createRequestId();
+        requests.add(id);
+        const abort = () => {
+          if (cancel) void cancel(id).catch(() => {});
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        try {
+          const result = await translate({
+            ...request,
+            id,
+            articleBackground,
+            articleTerminology: articleBackground ? automatic : undefined,
+          });
+          return decode(result.text).textContent ?? "";
+        } finally {
+          signal.removeEventListener("abort", abort);
+          requests.delete(id);
+        }
+      };
+      const [withoutContext, withContext] = await Promise.allSettled([
+        compare(),
+        compare(request.articleBackground),
+      ]);
+      signal.throwIfAborted();
+      if (
+        token !== generation ||
+        route !== routeKey() ||
+        settings !== settingsKey() ||
+        entries.get(block) !== entry ||
+        entry.target !== target ||
+        !target.isConnected ||
+        !sourceUnchanged(entry)
+      )
+        return;
+      return { source: entry.values.join(""), withoutContext, withContext };
+    },
     isEditing: () => editing,
     setEditing(enabled: boolean) {
       if (disposed) return;
@@ -623,11 +844,13 @@ export function createPageTranslator({
     },
     async translatePage({
       wholePage = false,
-    }: { wholePage?: boolean } = {}): Promise<void> {
+      articleContext = false,
+    }: { wholePage?: boolean; articleContext?: boolean } = {}): Promise<void> {
       if (disposed) return;
       restore();
       active = true;
       wholePageScope = wholePage;
+      withArticleContext = articleContext;
       translationSettings = settingsKey();
       observedRoute = routeKey();
       const rule = getSettings().siteRules.find(
@@ -657,7 +880,7 @@ export function createPageTranslator({
                 visibility?.unobserve(item.target);
                 for (const entry of entries.values())
                   if (visibilityTarget(entry.block) === item.target)
-                    void render(entry);
+                    void scheduleRender(entry);
               }
           },
           { rootMargin: "300px" },
@@ -670,7 +893,10 @@ export function createPageTranslator({
       mode = next;
       if (active && translationSettings !== settingsKey()) {
         void controller
-          .translatePage({ wholePage: wholePageScope })
+          .translatePage({
+            wholePage: wholePageScope,
+            articleContext: withArticleContext,
+          })
           .catch(onError);
         return;
       }
